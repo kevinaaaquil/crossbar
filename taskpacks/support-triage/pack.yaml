@@ -1,0 +1,5 @@
+name: Support triage
+description: >
+  Four support-desk workflows over an MCP ticketing server. Small enough to run
+  in seconds, shaped like the real thing: read the queue, decide, mutate state,
+  report back. Use it to check your setup, then replace it with your own tasks.

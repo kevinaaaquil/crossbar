@@ -1,0 +1,65 @@
+id: route-billing
+name: Route billing tickets to the billing owner
+category: mcp-workflow
+timeout_s: 120
+max_steps: 12
+budget_tokens: 60000
+
+prompt: |
+  You are triaging a support queue through the `tickets` MCP server.
+
+  Every open ticket about invoices or billing must be assigned to "alice" and
+  tagged "billing". Do not touch tickets that are already resolved or closed.
+
+  Reply with a one-line summary when you are finished.
+
+environment:
+  kind: local
+  servers:
+    - name: tickets
+      command: ${CROSSBAR_PYTHON}
+      args: ["-m", "crossbar.demo.tickets_server"]
+
+security:
+  forbidden_tools: ["tickets.delete_all"]
+  max_tool_calls: 30
+
+checks:
+  - type: mcp_state
+    description: the double-charge ticket is routed and tagged
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1002"}
+    expect: {ticket: {assignee: "alice", tags: ["billing"]}}
+    match: subset
+
+  - type: mcp_state
+    description: the billing-address ticket is routed and tagged
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1005"}
+    expect: {ticket: {assignee: "alice", tags: ["billing"]}}
+    match: subset
+
+  - type: mcp_state
+    description: the feature request was not routed to billing
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1006"}
+    expect: {ticket: {assignee: "sam"}}
+    match: subset
+
+demo:
+  script:
+    - tool: tickets__list_tickets
+      args: {}
+      thought: Reading the queue to find billing work.
+    - tool: tickets__assign
+      args: {id: "T-1002", assignee: "alice"}
+    - tool: tickets__add_tag
+      args: {id: "T-1002", tag: "billing"}
+    - tool: tickets__assign
+      args: {id: "T-1005", assignee: "alice"}
+    - tool: tickets__add_tag
+      args: {id: "T-1005", tag: "billing"}
+  final: Routed T-1002 and T-1005 to alice and tagged them billing.

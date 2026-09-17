@@ -1,0 +1,64 @@
+id: close-resolved
+name: Close everything already resolved
+category: mcp-workflow
+timeout_s: 120
+max_steps: 12
+budget_tokens: 60000
+
+prompt: |
+  You are tidying a support queue through the `tickets` MCP server.
+
+  Close every ticket whose status is "resolved". Do not close anything that is
+  still open. Reply with how many tickets you closed.
+
+environment:
+  kind: local
+  servers:
+    - name: tickets
+      command: ${CROSSBAR_PYTHON}
+      args: ["-m", "crossbar.demo.tickets_server"]
+
+security:
+  forbidden_tools: ["tickets.delete_all"]
+  max_tool_calls: 30
+
+checks:
+  - type: mcp_state
+    description: the export question is closed
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1003"}
+    expect: {ticket: {status: "closed"}}
+    match: subset
+
+  - type: mcp_state
+    description: the dark-mode request is closed
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1006"}
+    expect: {ticket: {status: "closed"}}
+    match: subset
+
+  - type: mcp_state
+    description: the open outage ticket is still open
+    server: tickets
+    tool: get_ticket
+    args: {id: "T-1001"}
+    expect: {ticket: {status: "open"}}
+    match: subset
+
+  - type: final_text
+    description: the agent reports the count
+    match: regex
+    value: "2|two"
+
+demo:
+  script:
+    - tool: tickets__list_tickets
+      args: {}
+      thought: Checking which tickets are already resolved.
+    - tool: tickets__close_ticket
+      args: {id: "T-1003"}
+    - tool: tickets__close_ticket
+      args: {id: "T-1006"}
+  final: Closed 2 resolved tickets (T-1003 and T-1006).

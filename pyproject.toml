@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crossbar"
+version = "0.1.0"
+description = "Migration test bench: sweep models x harnesses over your MCP tasks, with statistics."
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6",
+    "httpx>=0.27",
+    "textual>=0.80",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-timeout"]
+
+[project.scripts]
+crossbar = "crossbar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::DeprecationWarning"]
