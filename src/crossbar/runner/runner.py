@@ -224,10 +224,11 @@ class Runner:
         ran its own copies of the servers (Claude Code does)."""
         if not getattr(harness, "owns_servers", False):
             return score_trajectory(task, traj, env)
-        env.stop()
-        verifier = build_environment(task.environment)
-        verifier.workspace = workspace
-        verifier._owns_workspace = False  # the rollout's environment owns it
+        # A fresh connection sharing the rollout's workspace: the harness ran
+        # its own copies of the servers, so this environment's clients hold
+        # stale state. The rollout environment stays up until the caller tears
+        # it down, because it owns the workspace directory the verifier reads.
+        verifier = build_environment(task.environment, workspace=workspace)
         try:
             verifier.start()
             return score_trajectory(task, traj, verifier)

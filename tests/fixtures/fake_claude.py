@@ -10,6 +10,9 @@ Controlled by env vars:
   FAKE_CLAUDE_STDERR   text to write to stderr
   FAKE_CLAUDE_HANG     if set, sleep this many seconds instead of answering
   FAKE_CLAUDE_MCP_LOG  path to copy the --mcp-config file contents to
+  FAKE_CLAUDE_APPLY    JSON list of {server, tool, args} to really execute
+                       against the MCP servers named in --mcp-config, so the
+                       CLI-harness path can be tested with real state changes
 """
 
 from __future__ import annotations
@@ -18,6 +21,27 @@ import json
 import os
 import sys
 import time
+
+
+def _apply_calls(config_path: str, calls: list) -> None:
+    """Really drive the task's MCP servers, the way the CLI would."""
+    from crossbar.mcpclient import McpStdioClient
+
+    with open(config_path) as handle:
+        servers = json.load(handle)["mcpServers"]
+    for call in calls:
+        spec = servers[call["server"]]
+        client = McpStdioClient(
+            name=call["server"],
+            command=spec["command"],
+            args=spec.get("args", []),
+            env=spec.get("env", {}),
+        )
+        client.start()
+        try:
+            client.call_tool(call["tool"], call.get("args", {}))
+        finally:
+            client.stop()
 
 
 def main() -> int:
@@ -31,6 +55,10 @@ def main() -> int:
         config_path = sys.argv[sys.argv.index("--mcp-config") + 1]
         with open(config_path) as src, open(mcp_log, "w") as dst:
             dst.write(src.read())
+
+    apply = os.environ.get("FAKE_CLAUDE_APPLY")
+    if apply and "--mcp-config" in sys.argv:
+        _apply_calls(sys.argv[sys.argv.index("--mcp-config") + 1], json.loads(apply))
 
     hang = os.environ.get("FAKE_CLAUDE_HANG")
     if hang:

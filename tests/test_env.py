@@ -326,3 +326,20 @@ class TestCommandExpansion:
             assert e.expand("${CROSSBAR_WORKSPACE}/db.json") == f"{tmp_path}/db.json"
         finally:
             e.stop()
+
+
+class TestFactoryOptions:
+    def test_a_workspace_can_be_passed_through_the_factory(self, tmp_path):
+        env = build_environment(local_spec(), workspace=str(tmp_path))
+        env.start()
+        try:
+            assert env.workspace == str(tmp_path)
+        finally:
+            env.stop()
+        assert tmp_path.exists(), "a caller-supplied workspace must not be deleted"
+
+    def test_docker_options_still_reach_the_docker_environment(self):
+        spec = EnvironmentSpec(kind="docker", servers=(NOTES,), image="img")
+        env = build_environment(spec, docker_bin="my-docker", workspace="/tmp/x")
+        assert env.docker_bin == "my-docker"
+        assert env.workspace == "/tmp/x"

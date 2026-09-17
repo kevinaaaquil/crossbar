@@ -22,8 +22,9 @@ class DockerEnvironment(Environment):
         docker_bin: str = "docker",
         network: str = "none",
         keep_container: bool = False,
+        workspace: str | None = None,
     ) -> None:
-        super().__init__(spec)
+        super().__init__(spec, workspace=workspace)
         self.docker_bin = docker_bin
         self.network = network
         self.keep_container = keep_container

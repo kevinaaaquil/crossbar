@@ -332,3 +332,95 @@ class TestAgentFactoryContract:
         assert len(result.records) == 3
         # a skill of 0.5 must not produce three identical rollouts by accident
         assert len({r.score.passed for r in result.records}) >= 1
+
+
+class TestCliHarnessVerification:
+    """A harness that runs its own copies of the MCP servers still has to be
+    scored against the state it actually left behind."""
+
+    @pytest.fixture
+    def fake_claude(self, tmp_path, monkeypatch):
+        import json as _json
+        import stat
+
+        script = tmp_path / "claude"
+        script.write_text(f'#!/bin/sh\nexec "{PY}" -m tests.fixtures.fake_claude "$@"\n')
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text(
+            _json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": "Created the note.",
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                }
+            )
+        )
+        monkeypatch.setenv("FAKE_CLAUDE_SCRIPT", str(transcript))
+        monkeypatch.setenv(
+            "FAKE_CLAUDE_APPLY",
+            _json.dumps(
+                [{"server": "notes", "tool": "create_note", "args": {"title": "Q3"}}]
+            ),
+        )
+        return str(script)
+
+    def cli_config(self, claude_bin):
+        return parse_config(
+            {
+                "models": [{"id": "cc", "provider": "claude-cli", "model": "opus"}],
+                "harnesses": [
+                    {"id": "claude-code", "kind": "claude-code", "claude_bin": claude_bin}
+                ],
+                "run": {"repeats": 1, "concurrency": 1},
+            },
+            source="<test>",
+        )
+
+    def state_task(self):
+        return parse_task(
+            {
+                "id": "cli-state",
+                "prompt": "Create a note titled Q3.",
+                "environment": {
+                    "kind": "local",
+                    "servers": [
+                        {
+                            "name": "notes",
+                            "command": PY,
+                            "args": ["-m", "tests.fixtures.notes_server"],
+                        }
+                    ],
+                },
+                "checks": [
+                    {
+                        "type": "mcp_state",
+                        "server": "notes",
+                        "tool": "list_notes",
+                        "expect": {"notes": [{"title": "Q3"}]},
+                    }
+                ],
+            },
+            source="<test>",
+        )
+
+    def test_state_left_by_the_cli_is_seen_by_the_scorer(self, fake_claude, tmp_path):
+        result = Runner(
+            self.cli_config(fake_claude),
+            TaskPack(tasks=(self.state_task(),)),
+            results_dir=str(tmp_path / "runs"),
+        ).run()
+        record = result.records[0]
+        assert record.error == ""
+        assert record.score.passed is True
+
+    def test_a_cli_run_that_changes_nothing_fails_the_check(self, fake_claude, tmp_path, monkeypatch):
+        monkeypatch.delenv("FAKE_CLAUDE_APPLY")
+        result = Runner(
+            self.cli_config(fake_claude),
+            TaskPack(tasks=(self.state_task(),)),
+            results_dir=str(tmp_path / "runs"),
+        ).run()
+        assert result.records[0].score.passed is False

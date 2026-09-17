@@ -10,7 +10,7 @@ from crossbar.tasks import EnvironmentSpec
 
 def build_environment(spec: EnvironmentSpec, **kwargs) -> Environment:
     if spec.kind == "local":
-        return LocalEnvironment(spec)
+        return LocalEnvironment(spec, **kwargs)
     if spec.kind == "docker":
         return DockerEnvironment(spec, **kwargs)
     raise EnvironmentError_(f"unknown environment kind {spec.kind!r}")
