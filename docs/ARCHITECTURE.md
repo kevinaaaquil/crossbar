@@ -81,7 +81,7 @@ saying so requires the interval, not the point estimate.
 
 ## Testing strategy
 
-427 tests, no network, no API key, no Docker daemon, no model.
+435 tests, no network, no API key, no Docker daemon, no model.
 
 The trick is what gets replaced and what does not. **Replaced:** the model (a
 `ScriptedProvider` returning pre-programmed steps), the `claude` CLI (a fake

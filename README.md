@@ -138,7 +138,7 @@ Overlapping intervals are marked `~` and are never ranked against each other.
 ## Tests
 
 ```bash
-.venv/bin/pytest          # 427 tests, no network, no API key, no Docker
+.venv/bin/pytest          # 435 tests, no network, no API key, no Docker
 ```
 
 Every layer is exercised against real subprocesses: a real MCP server over
