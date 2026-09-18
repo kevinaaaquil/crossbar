@@ -17,8 +17,8 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 |---|---|---|---|
 | 0 | Carry-over: `stats`, `providers`, `mcpclient`, `trace` | **done** | 95 |
 | 1 | `domain` — Test, Task, Golden, limits, env spec, roles | **done** | 48 |
-| 2 | `connectors` — protocol, registry, `McpConnector` | next | — |
-| 3 | `environment` — local + docker, reset between attempts | not started | — |
+| 2 | `connectors` — protocol, registry, `McpConnector` | **done** | 37 |
+| 3 | `environment` — local + docker, reset between attempts | next | — |
 | 4 | `harness` — connector-routed agent loop | not started | — |
 | 5 | `agents` — `ModelAgent`, `CliAgent` | not started | — |
 | 6 | `evidence` — capture, serialise, reload | not started | — |
@@ -28,7 +28,7 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 143
+**Total tests:** 182
 
 ---
 
@@ -64,12 +64,28 @@ Two new requirements arrived mid-step and are recorded as decisions in
 CLAUDE.md: agent CLIs connectable in any role (new step 5, `agents`), and a live
 queue view in the TUI (changes the orchestrator's interface, step 8).
 
+### Step 2 — connectors — done
+`Connector` protocol, registry, and `McpConnector`. 37 tests, driven against a
+real `tests/fixtures/tickets_server.py` subprocess.
+
+Read-only classification works as designed: the server's own `readOnlyHint`
+annotation first, then an explicit `read_only_tools` declaration in the Test,
+then **not a probe**. Nothing is inferred from a tool's name, and `probe()`
+refuses a tool it cannot establish as read-only.
+
+`EnvironmentHandle` landed here rather than in step 3, since connectors are what
+consume it: workspace, command prefix, env vars, endpoints, and `${VAR}`
+expansion with `CROSSBAR_PYTHON` and `CROSSBAR_WORKSPACE` always available.
+
 ---
 
 ## Discovered along the way
 
 Notes that do not belong in the design doc but should not be lost.
 
+- `mcpclient.ToolSpec` did not parse MCP tool `annotations`, so `readOnlyHint`
+  never reached the connector. Added with a test. This is the first change to a
+  carry-over module in the rebuild.
 - The domain class `Test` collides with pytest's collection heuristics. Fixed
   with `__test__ = False` on the dataclass. Do not rename it; the terminology is
   fixed.

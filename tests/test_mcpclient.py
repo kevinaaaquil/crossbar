@@ -87,6 +87,24 @@ class TestListTools:
     def test_tools_are_cached_after_first_call(self, client):
         assert client.list_tools() is client.list_tools()
 
+    def test_tool_annotations_are_preserved(self):
+        """Servers advertise readOnlyHint; evidence capture depends on it."""
+        c = McpStdioClient(
+            name="tickets",
+            command=PY,
+            args=["-m", "tests.fixtures.tickets_server"],
+        )
+        c.start()
+        try:
+            by_name = {t.name: t for t in c.list_tools()}
+            assert by_name["list_tickets"].annotations.get("readOnlyHint") is True
+            assert by_name["delete_all"].annotations.get("readOnlyHint") is None
+        finally:
+            c.stop()
+
+    def test_tools_without_annotations_have_an_empty_mapping(self, client):
+        assert all(isinstance(t.annotations, dict) for t in client.list_tools())
+
 
 class TestCallTool:
     def test_successful_call_returns_text_content(self, client):

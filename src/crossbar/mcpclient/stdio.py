@@ -27,6 +27,9 @@ class ToolSpec:
     description: str
     input_schema: Mapping[str, Any]
     server: str = ""
+    annotations: Mapping[str, Any] = field(default_factory=dict)
+    """Server-declared behaviour hints, notably ``readOnlyHint``. Evidence
+    capture relies on these to decide what is safe to call."""
 
     @property
     def qualified_name(self) -> str:
@@ -151,6 +154,7 @@ class McpStdioClient:
                     description=str(t.get("description", "")),
                     input_schema=dict(t.get("inputSchema") or {}),
                     server=self.name,
+                    annotations=dict(t.get("annotations") or {}),
                 )
                 for t in result.get("tools", [])
             )
