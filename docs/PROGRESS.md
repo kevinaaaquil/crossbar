@@ -11,7 +11,12 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 
 ---
 
-## Status
+## Status — MVP complete
+
+All eleven steps are built, plus the CLI, a scripted demo and an end-to-end
+test. 515 tests, offline.
+
+
 
 | # | Module | State | Tests |
 |---|---|---|---|
@@ -28,7 +33,23 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 511
+**Total tests:** 515
+
+### What is NOT built
+Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
+
+- A second connector (browser, HTTP, shell). MCP is the only one.
+- Parallel execution. One container, one Task at a time.
+- `CliAgent` — connecting Claude Code or Codex as a model. The `Agent` seam is
+  in place; the implementation is not.
+- Plan editing, machine-checkable plan items, judge self-agreement measurement.
+
+### Known unknowns
+- **The judge prompts have never met a live model.** Planning and grading are
+  tested against scripted responses, so the plumbing is proven but the wording
+  is not. This is the biggest remaining risk.
+- **The docker environment has never met a live daemon.** Covered against a stub
+  binary only.
 
 ---
 
