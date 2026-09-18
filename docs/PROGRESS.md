@@ -20,15 +20,15 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 2 | `connectors` — protocol, registry, `McpConnector` | **done** | 37 |
 | 3 | `environment` — local + docker, reset between attempts | **done** | 24 |
 | 4 | `harness` — connector-routed agent loop | **done** | 19 |
-| 5 | `agents` — `ModelAgent`; `CliAgent` *(nice to have)* | next | — |
-| 6 | `evidence` — capture, serialise, reload | not started | — |
+| 5 | `agents` + `roster` — `ModelAgent`, model roles | **done** | 38 |
+| 6 | `evidence` — capture, serialise, reload | next | — |
 | 7 | `judging` — Check Plan, grading, blinding | not started | — |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | not started | — |
 | 9 | `dump` — zip the run | not started | — |
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 225
+**Total tests:** 261
 
 ---
 
@@ -100,6 +100,20 @@ back to the model, never a crash.
 One test greps the module source for `mcp` and `docker` and fails if either
 appears. A second exercises the loop with a non-MCP `EchoConnector` alongside
 the MCP one. Together they are what stop the seam quietly closing.
+
+### Step 5 — agents and roster — done
+`Agent` protocol plus `ModelAgent`, and the roster that connects models and
+assigns roles. 38 tests.
+
+The roster enforces what was decided: at least a candidate and a baseline, any
+number of extra models, roles as labels that change nothing about execution, and
+the judge falling back to the baseline. It exposes `judge_is_baseline` so the
+report can state the conflict of interest rather than hide it, and
+`execution_roles` so ordering lives in one place.
+
+`CliAgent` is deliberately not built — nice to have, and the seam is what
+matters. `owns_harness` is on the protocol so the report can label a product
+comparison as one when a CLI agent does arrive.
 
 ---
 
