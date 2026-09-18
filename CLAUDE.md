@@ -46,7 +46,9 @@ currently uses a different word, the rename is listed in
 | **Baseline** | A user-assigned role label. Its Attempts run second for a given Test. Typically a frontier model. Also the Judge fallback when no Judge is assigned. |
 | **Judge** | A model used to analyse results against the Golden. Optional; falls back to the Baseline. Always blinded to whose attempts it is grading. |
 | **Dump** | A full zipped export of everything a run produced. For the user's own inspection or review by their own AI. We never need it to score: the Task tells us what to check. |
-| **Golden** | The known correct result for a Task, supplied by the user. |
+| **Golden** | The known correct result for a Task, supplied by the user, in whatever form is natural. Never shaped to fit a check schema — the judge infers what to check from it. |
+| **Evidence** | Whatever was captured from an Attempt for the judge to examine. No fixed schema; determined by what the Golden implies. |
+| **Unchecked** | A Task outcome meaning the required evidence was unavailable, so no score was produced. Carries a reason. |
 
 ### Planned renames
 
@@ -78,12 +80,14 @@ currently uses a different word, the rename is listed in
 4. HARNESS         ours, fixed, invisible
                    model + enabled connectors, in a loop
 
-5. ARTIFACTS       what an Attempt produced
-                   final answer · files written · environment state snapshot
+5. EVIDENCE        whatever the Golden implies is needed, captured while the
+                   Environment is alive: final answer · files · DB dumps ·
+                   state snapshots. No fixed schema.
 
-6. JUDGING         optional judge model, blinded, grades artifacts against
-                   the Golden; falls back to the Baseline if none is given
-                   plus a Dump the user can review with their own AI
+6. JUDGING         optional judge model, blinded, infers what to check from
+                   Task + Golden and grades the Evidence; falls back to the
+                   Baseline if none is given. Outcomes: graded / unchecked
+                   (with a reason) / failed. Plus a Dump for the user.
 
 7. ORCHESTRATION   one container, one Task at a time (for now)
                    order: per Test, Candidate then Baseline
@@ -250,6 +254,58 @@ check; the Dump is an output for the user, not a mechanism we depend on.
 This closes the earlier open question about Dump format and granularity: one
 full zip, no per-Attempt or failures-only variants to design.
 
+### 2026-09-19 — The Golden is free-form; the judge infers what to check
+
+**Decided.** The Golden is **never shaped to fit a check schema**. The user
+writes what a correct result means, in whatever terms are natural. Because the
+system knows the Task and knows the Golden, the judge can work out for itself
+what evidence it needs.
+
+Example: if the Golden says *"the DB should contain this data"*, the judge knows
+it must inspect the database, and does so by dumping it — if a dump is
+available.
+
+**Three outcomes per Task, not two:**
+
+| Outcome | When |
+|---|---|
+| **Graded** | The required evidence was available. A score is recorded. |
+| **Unchecked** | The evidence was not available. **No score.** A reason is attached and surfaced to the user — e.g. *"the Golden requires a database dump, and no dump is available to us."* |
+| **Failed** | The Attempt itself errored. |
+
+`Unchecked` is a first-class result, not an error. It tells the user precisely
+what to fix in their setup (expose a dump endpoint, enable a connector) instead
+of silently scoring zero or inventing a pass.
+
+**Consequences:**
+
+- There is **no fixed artifact schema**. What gets captured is whatever the
+  Golden implies is needed.
+- The judge needs **read-only access to evidence**, not just a text blob. The
+  Connector layer should serve this in a read-only mode, so we do not build a
+  second access path.
+- **Evidence must be captured while the Environment is alive.** Judging can be
+  deferred or re-run later, by which time the container is gone — so anything
+  the judge might need has to be captured at the end of the Attempt. This is
+  what makes `Unchecked` happen in practice: the judge wanted something nobody
+  captured.
+
+### 2026-09-19 — Unjudged Tests can be re-judged without re-running
+
+**Decided.** An unjudged Test is marked **unjudged**. The user can then either
+force a re-run of **the judging step alone**, or a re-run of **the whole Test
+flow**. Their choice.
+
+**Requirement this creates:** an Attempt's captured evidence must be complete and
+standalone enough to judge from, long after its Environment has been destroyed.
+Judging cannot depend on a live container.
+
+### 2026-09-19 — Rebuild work happens on a branch, never on main
+
+`main` holds v0.1. The rebuild happens on a separate branch and `main` will be
+force-pushed over when it is ready. Never commit rebuild work directly to
+`main`.
+
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
 Noncommercial use free, including charities/schools/public bodies. Commercial
@@ -262,22 +318,27 @@ so plainly rather than burying it.
 
 Unresolved. Do not guess; ask.
 
-1. **Artifact shape.** What exactly is "the final output" that the judge
-   compares against the Golden — final text, produced files, an environment
-   state snapshot, or all three as a bundle? This determines the whole scoring
-   layer.
-2. **Golden shape.** What form does the user's golden data arrive in, and does
-   it differ per Task type?
+1. **Capture policy.** Given that the Golden implies what evidence is needed,
+   is that worked out *before* the run (so we capture exactly what is required)
+   or do we capture everything cheap and available and let the judge pick? The
+   first avoids huge payloads and reduces `Unchecked`; the second is simpler.
+   See the check-plan proposal below.
+2. **Check plan — proposed, needs sign-off.** Derive the judge's check plan
+   **once per Task** from Task + Golden, store it, show it to the user, and
+   apply it to every Attempt. Otherwise the judge may examine different evidence
+   on different Attempts, and the statistics stop comparing like with like. A
+   stored plan also tells the orchestrator what to capture, and makes
+   `Unchecked` predictable before a run rather than discovered after it.
 3. **Deterministic pre-checks.** Whether machine-checkable assertions (state
    diffs, schema validation) run before the judge as a cheaper first tier, or
-   whether judging is the only mechanism. Now bears directly on the judging
-   budget: anything settled deterministically is a judge call not paid for.
+   whether judging is the only mechanism. Bears directly on the judging budget:
+   anything settled deterministically is a judge call not paid for. If the check
+   plan exists, it could mark individual items as machine-checkable.
 4. **Connector set: fixed per Task or user-varied?** (see decision above)
 5. **Browser sequencing.** Backend-only containers first with browser second, or
    is a UI-driving Task the motivating case that must be in the MVP?
-6. **What happens to an unjudged Test's results?** They are executed and land in
-   the Dump, but carry no score. Are they simply held unjudged until the user
-   asks, or discarded, or scored later on demand?
+6. **Judge consistency across re-judging.** If a Test is re-judged later, must
+   it produce the same verdict as the first pass? If not, which one counts?
 
 ---
 
