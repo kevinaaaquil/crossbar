@@ -1,0 +1,21 @@
+id: escalate-outage
+name: Escalate the outage tickets
+
+prompt: |
+  You are triaging a support queue through the tickets tools.
+
+  Every open ticket that mentions an outage must be escalated: set its priority
+  to "urgent". Leave every other ticket's priority alone.
+
+  When you are done, reply with the ticket ids you escalated.
+
+# What a correct result means, in your own words. Never a schema —
+# crossbar works out what to check from this.
+golden: |
+  Tickets T-1001 and T-1004 both have priority "urgent", because both mention
+  an outage. No other ticket's priority changed: T-1002 and T-1005 are still
+  "normal" and "low" respectively.
+
+limits:
+  timeout_s: 120
+  max_steps: 12

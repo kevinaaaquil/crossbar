@@ -1,0 +1,14 @@
+id: route-billing
+name: Route billing tickets to the billing owner
+
+prompt: |
+  You are triaging a support queue through the tickets tools.
+
+  Every open ticket about invoices or billing must be assigned to "alice" and
+  tagged "billing". Do not touch tickets that are already resolved or closed.
+
+  Reply with a one-line summary when you are finished.
+
+golden: |
+  Tickets T-1002 and T-1005 are both assigned to "alice" and carry the tag
+  "billing". T-1006 is a feature request, so it was left assigned to "sam".

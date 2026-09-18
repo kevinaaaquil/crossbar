@@ -1,0 +1,15 @@
+id: tag-enterprise
+name: Tag the enterprise customers
+
+prompt: |
+  You are triaging a support queue through the tickets tools.
+
+  Tag every ticket from a customer on the "enterprise" plan with the tag
+  "enterprise", and raise each of those tickets to at least "high" priority.
+
+  Reply with the number of enterprise tickets you handled.
+
+golden: |
+  Tickets T-1001 and T-1004 are the two from enterprise-plan customers. Both
+  carry the tag "enterprise" and both have priority "high" or "urgent".
+  The reply says two tickets were handled.

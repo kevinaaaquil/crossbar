@@ -1,0 +1,12 @@
+id: close-resolved
+name: Close everything already resolved
+
+prompt: |
+  You are tidying a support queue through the tickets tools.
+
+  Close every ticket whose status is "resolved". Do not close anything that is
+  still open. Reply with how many tickets you closed.
+
+golden: |
+  Tickets T-1003 and T-1006 both have status "closed", since both were
+  resolved. T-1001 is still "open". The reply says two tickets were closed.

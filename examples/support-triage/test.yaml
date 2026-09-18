@@ -1,0 +1,6 @@
+name: Support triage
+description: >
+  Four support-desk workflows over an MCP ticketing backend. Small enough to
+  run in seconds. Use it to check your setup, then replace it with your own.
+repeats: 3
+environment: env.yaml
