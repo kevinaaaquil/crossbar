@@ -21,14 +21,14 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 3 | `environment` — local + docker, reset between attempts | **done** | 24 |
 | 4 | `harness` — connector-routed agent loop | **done** | 19 |
 | 5 | `agents` + `roster` — `ModelAgent`, model roles | **done** | 38 |
-| 6 | `evidence` — capture, serialise, reload | next | — |
-| 7 | `judging` — Check Plan, grading, blinding | not started | — |
+| 6 | `evidence` — capture, serialise, reload | **done** | 23 |
+| 7 | `judging` — Check Plan, grading, blinding | next | — |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | not started | — |
 | 9 | `dump` — zip the run | not started | — |
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 261
+**Total tests:** 284
 
 ---
 
@@ -114,6 +114,22 @@ report can state the conflict of interest rather than hide it, and
 `CliAgent` is deliberately not built — nice to have, and the seam is what
 matters. `owns_harness` is on the protocol so the report can label a product
 comparison as one when a CLI agent does arrive.
+
+### Step 6 — evidence — done
+Capture, serialisation and reload. 23 tests.
+
+Nothing in capture raises. An unknown connector, an unknown probe, a tool that
+cannot be established as read-only, or a probe that errors all become an
+`EvidenceItem` carrying the reason — which is what later turns into an
+`Unchecked` outcome the user can act on.
+
+Blinding is structural: `Evidence` has no model, agent or role field, so the
+payload cannot leak what it does not have. Two tests hold that line — one greps
+the serialised form for identity words, the other asserts the dataclass has no
+such fields.
+
+One test writes evidence, tears the environment down, and reads the file back to
+prove judging never needs a live container.
 
 ---
 
