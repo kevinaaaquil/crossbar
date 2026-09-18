@@ -127,7 +127,7 @@ No API key. No network. No Docker. crossbar ships with two mock backends and a
 demo task pack so you can watch the whole machine work before wiring anything up.
 
 ```bash
-git clone <this repo> && cd crossbar
+git clone https://github.com/kevinaaaquil/crossbar.git && cd crossbar
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 

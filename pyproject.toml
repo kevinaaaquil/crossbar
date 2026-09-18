@@ -33,9 +33,9 @@ dependencies = [
 dev = ["pytest>=8", "pytest-timeout"]
 
 [project.urls]
-Homepage = "https://github.com/eshansingh/crossbar"
-Documentation = "https://github.com/eshansingh/crossbar/blob/main/docs/WALKTHROUGH.md"
-Issues = "https://github.com/eshansingh/crossbar/issues"
+Homepage = "https://github.com/kevinaaaquil/crossbar"
+Documentation = "https://github.com/kevinaaaquil/crossbar/blob/main/docs/WALKTHROUGH.md"
+Issues = "https://github.com/kevinaaaquil/crossbar/issues"
 
 [project.scripts]
 crossbar = "crossbar.cli:main"
