@@ -8,6 +8,10 @@ serial execution, judge-based scoring with a Check Plan.
 
 ---
 
+> **Status.** Built, on branch `redesign`. Where this document and the code
+> disagree, the code wins and this document is wrong — say so in
+> [`PROGRESS.md`](PROGRESS.md). Last reconciled 2026-09-19.
+
 ## 1. Domain objects
 
 ```
@@ -28,10 +32,11 @@ Attempt ──┬── model + role + repeat index
 
 ### Test
 
-A directory. `test.yaml` holds metadata; `*.task.yaml` files hold Tasks.
+A directory. `test.yaml` holds metadata; `*.task.yaml` files hold Tasks. The
+shipped example lives in `examples/`, not `tests/`, because `tests/` is pytest's.
 
 ```yaml
-# tests/support-triage/test.yaml
+# examples/support-triage/test.yaml
 name: Support triage
 description: Four support-desk workflows over a ticketing backend.
 repeats: 3                    # how many times each Task is attempted per model
@@ -41,7 +46,7 @@ environment: env.yaml         # default Environment for every Task in this Test
 ### Task
 
 ```yaml
-# tests/support-triage/01-escalate.task.yaml
+# examples/support-triage/01-escalate-outage.task.yaml
 id: escalate-outage
 name: Escalate the outage tickets
 
@@ -65,7 +70,7 @@ derived from it.
 ### Environment
 
 ```yaml
-# tests/support-triage/env.yaml
+# examples/support-triage/env.yaml
 kind: docker                  # docker | local
 image: crossbar/demo-tickets:latest
 reset: recreate               # recreate the container between Attempts
@@ -82,6 +87,38 @@ connectors:
 authoring and for the test suite; it offers no isolation.
 
 ---
+
+### Roster
+
+Which models are connected, and the role each holds. Roles are labels: they do
+not change how a Task executes. They mean exactly two things — the Candidate's
+Attempts run before the Baseline's, and the Baseline judges when no Judge is
+assigned.
+
+```yaml
+# roster.yaml
+models:
+  - id: my-model
+    provider: openai              # any OpenAI-compatible endpoint
+    model: qwen3
+    base_url: http://localhost:8000/v1
+    api_key_env: LOCAL_API_KEY    # the NAME of a variable, never the key
+    price: {input_per_mtok: 0.20, output_per_mtok: 0.60}
+
+  - id: frontier
+    provider: anthropic
+    model: claude-opus-5
+    api_key_env: ANTHROPIC_API_KEY
+    price: {input_per_mtok: 15.0, output_per_mtok: 75.0}
+
+roles:
+  candidate: my-model
+  baseline: frontier
+  # judge: ...    optional; falls back to the baseline
+```
+
+A run needs at least a Candidate and a Baseline. Any number of further models
+may be connected and assigned.
 
 ## 2. Connectors
 
@@ -369,21 +406,23 @@ Flat, inspectable, and re-judgeable without a container.
 
 ## 9. What is reused from v0.1
 
-| Reused | Notes |
+| Reused | How it went |
 |---|---|
-| `stats/` | Unchanged. Bootstrap, paired tests, Holm, variance. |
-| `providers/` | Model clients. Gains the judge role. |
-| `mcpclient/` | Becomes the internals of `McpConnector`. |
-| `trace/` | Trajectory recording; Evidence is new alongside it. |
-| `report/`, `analysis.py` | Adapted once judged results exist. |
+| `stats/` | Untouched. |
+| `providers/` | Untouched, minus the mock that depended on the old task format. |
+| `mcpclient/` | Now the internals of `McpConnector`. One fix: it was dropping MCP tool annotations, so `readOnlyHint` never reached the connector. |
+| `trace/` | Trajectory recording, unchanged. Evidence is new alongside it. |
 
 | Rewritten | Why |
 |---|---|
 | `tasks/` → `domain/` | Test/Task/Golden, no check schema. |
-| `env/` | Container-shaped, reset between Attempts. |
+| `env/` → `environment/` | Container-shaped, recreated between Attempts. |
 | `harness/` | Single harness, connector-routed. |
 | `scoring/` → `judging/` | Check Plan and judge, replacing deterministic checks. |
-| `runner/` → `orchestrator/` | Roles, ordering, opt-in judging. |
+| `runner/` → `orchestrator/` | Roles, ordering, opt-in judging, queue model. |
+| `analysis.py`, `report/` | Rebuilt rather than adapted: the axis is models now, and `Unchecked` needed first-class handling. |
+
+Also new: `roster.py`, `agents/`, `evidence/`, `dump/`, `cli.py`.
 
 ---
 
