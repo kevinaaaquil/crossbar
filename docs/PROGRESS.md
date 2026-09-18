@@ -22,13 +22,13 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 4 | `harness` — connector-routed agent loop | **done** | 19 |
 | 5 | `agents` + `roster` — `ModelAgent`, model roles | **done** | 38 |
 | 6 | `evidence` — capture, serialise, reload | **done** | 23 |
-| 7 | `judging` — Check Plan, grading, blinding | next | — |
-| 8 | `orchestrator` — roles, ordering, judging, storage, queue model | not started | — |
+| 7 | `judging` — Check Plan, grading, blinding | **done** | 35 |
+| 8 | `orchestrator` — roles, ordering, judging, storage, queue model | next | — |
 | 9 | `dump` — zip the run | not started | — |
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 284
+**Total tests:** 319
 
 ---
 
@@ -130,6 +130,23 @@ such fields.
 
 One test writes evidence, tears the environment down, and reads the file back to
 prove judging never needs a live container.
+
+### Step 7 — judging — done
+`CheckPlan`, `Judgement`, the `Judge`, and a `ScriptedJudge`. 35 tests.
+
+Planning sees only Task + Golden + the probe catalogue. A plan item referencing
+a probe that does not exist is moved to `unsatisfiable` rather than kept, so the
+user is told before a run instead of collecting Unchecked results after one.
+
+Grading decides missing-evidence checks **without a judge call** — there is
+nothing for a model to read — and a check the judge simply fails to answer is
+Unchecked, never a silent pass. Any unchecked check leaves the whole Attempt
+unscored, because a Golden is one statement and verifying half of it does not
+establish the Task was done.
+
+Three blinding tests hold the line: no identity words in the grading prompt, no
+hint the judge might be grading its own work, and no pairwise phrasing (grading
+is one Attempt against the Golden, which is less biased than "which is better").
 
 ---
 
