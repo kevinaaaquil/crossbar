@@ -106,13 +106,14 @@ class StateCheckingJudge:
         return plan_for(task.id)
 
     def grade(self, plan, evidence):
-        from crossbar.judging import CheckOutcome, CheckStatus
-        from crossbar.judging.judge import _assemble
+        from crossbar.judging import CheckOutcome, CheckStatus, assemble_judgement
 
         item = evidence.items[0] if evidence.items else None
         if item is None or not item.available:
             reason = item.error if item else "no evidence was captured"
-            return _assemble((CheckOutcome("state-matches-golden", CheckStatus.UNCHECKED, reason),), "")
+            return assemble_judgement(
+                (CheckOutcome("state-matches-golden", CheckStatus.UNCHECKED, reason),), ""
+            )
 
         tickets = {t["id"]: t for t in json.loads(item.content)["tickets"]}
         expectations = {
@@ -127,7 +128,7 @@ class StateCheckingJudge:
         }
         ok = expectations[plan.task_id]()
         status = CheckStatus.PASS if ok else CheckStatus.FAIL
-        return _assemble(
+        return assemble_judgement(
             (CheckOutcome("state-matches-golden", status, "read the ticket store"),),
             "compared the store against the golden",
         )

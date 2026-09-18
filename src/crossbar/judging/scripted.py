@@ -6,7 +6,11 @@ from typing import Callable, Mapping
 
 from crossbar.domain import Task
 from crossbar.evidence import Evidence
-from crossbar.judging.judge import _all_unchecked, _assemble, _missing_by_request, _key
+from crossbar.judging.grading import (
+    all_unchecked,
+    assemble_judgement,
+    undecidable_checks,
+)
 from crossbar.judging.model import (
     CheckOutcome,
     CheckPlan,
@@ -42,17 +46,11 @@ class ScriptedJudge:
 
     def grade(self, plan: CheckPlan, evidence: Evidence) -> Judgement:
         self.gradings_made += 1
-        missing = _missing_by_request(evidence)
         verdicts = dict(self.grader(plan, evidence))
-
-        undecidable = {}
-        for item in plan.items:
-            reasons = [missing[_key(r)] for r in item.evidence if _key(r) in missing]
-            if reasons or not item.evidence:
-                undecidable[item.id] = "; ".join(reasons) or "no evidence was requested"
+        undecidable = undecidable_checks(plan, evidence)
 
         if len(undecidable) == len(plan.items):
-            return _all_unchecked(plan, undecidable)
+            return all_unchecked(plan, undecidable)
 
         outcomes = []
         for item in plan.items:
@@ -63,4 +61,4 @@ class ScriptedJudge:
                 continue
             raw = verdicts.get(item.id, "unchecked")
             outcomes.append(CheckOutcome(item.id, CheckStatus(raw), "scripted"))
-        return _assemble(tuple(outcomes), self.reasoning)
+        return assemble_judgement(tuple(outcomes), self.reasoning)

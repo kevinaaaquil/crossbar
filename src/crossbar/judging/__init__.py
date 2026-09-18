@@ -11,6 +11,12 @@ from crossbar.judging.model import (
     load_judgement,
     load_plan,
 )
+from crossbar.judging.grading import (
+    all_unchecked,
+    assemble_judgement,
+    missing_evidence,
+    undecidable_checks,
+)
 from crossbar.judging.judge import Judge, JudgingError
 from crossbar.judging.scripted import ScriptedJudge
 
@@ -25,6 +31,10 @@ __all__ = [
     "Outcome",
     "ProbeCatalogue",
     "ScriptedJudge",
+    "all_unchecked",
+    "assemble_judgement",
+    "missing_evidence",
+    "undecidable_checks",
     "load_judgement",
     "load_plan",
 ]

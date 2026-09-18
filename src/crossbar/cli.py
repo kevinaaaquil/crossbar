@@ -324,16 +324,23 @@ class _PassEverything:
         raise NotImplementedError("re-judging always reuses the stored plan")
 
     def grade(self, plan, evidence):
-        from crossbar.judging.judge import _assemble, _key, _missing_by_request
-        from crossbar.judging import CheckOutcome, CheckStatus
+        from crossbar.judging import (
+            CheckOutcome,
+            CheckStatus,
+            assemble_judgement,
+            undecidable_checks,
+        )
 
-        missing = _missing_by_request(evidence)
-        outcomes = []
-        for item in plan.items:
-            reasons = [missing[_key(r)] for r in item.evidence if _key(r) in missing]
-            status = CheckStatus.UNCHECKED if reasons else CheckStatus.PASS
-            outcomes.append(CheckOutcome(item.id, status, "; ".join(reasons) or "scripted pass"))
-        return _assemble(tuple(outcomes), "scripted: everything passes")
+        undecidable = undecidable_checks(plan, evidence)
+        outcomes = [
+            CheckOutcome(
+                item.id,
+                CheckStatus.UNCHECKED if item.id in undecidable else CheckStatus.PASS,
+                undecidable.get(item.id, "scripted pass"),
+            )
+            for item in plan.items
+        ]
+        return assemble_judgement(tuple(outcomes), "scripted: everything passes")
 
 
 if __name__ == "__main__":

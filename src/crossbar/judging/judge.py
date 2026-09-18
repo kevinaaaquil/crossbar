@@ -10,10 +10,15 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from crossbar.domain import Task
-from crossbar.evidence import Evidence, EvidenceRequest
+from crossbar.evidence import Evidence
+from crossbar.judging.grading import (
+    all_unchecked,
+    assemble_judgement,
+    undecidable_checks,
+)
 from crossbar.judging.model import (
     CheckItem,
     CheckOutcome,
@@ -104,23 +109,11 @@ class Judge:
         Checks whose evidence was never captured are settled here, without
         spending a judge call: there is nothing for a model to read.
         """
-        missing = _missing_by_request(evidence)
-        undecidable: dict[str, str] = {}
-        decidable: list[CheckItem] = []
-
-        for item in plan.items:
-            reasons = [
-                missing[_key(request)]
-                for request in item.evidence
-                if _key(request) in missing
-            ]
-            if reasons or not item.evidence:
-                undecidable[item.id] = "; ".join(reasons) or "no evidence was requested"
-            else:
-                decidable.append(item)
+        undecidable = undecidable_checks(plan, evidence)
+        decidable = [item for item in plan.items if item.id not in undecidable]
 
         if not decidable:
-            return _all_unchecked(plan, undecidable)
+            return all_unchecked(plan, undecidable)
 
         payload = self._ask(GRADE_SYSTEM, _grading_prompt(plan, decidable, evidence))
         self.gradings_made += 1
@@ -151,7 +144,7 @@ class Judge:
                 status = CheckStatus.UNCHECKED
             outcomes.append(CheckOutcome(item.id, status, str(raw.get("reason", ""))))
 
-        return _assemble(tuple(outcomes), str(payload.get("reasoning", "")))
+        return assemble_judgement(tuple(outcomes), str(payload.get("reasoning", "")))
 
     # -- transport ---------------------------------------------------------
 
@@ -192,46 +185,6 @@ def _grading_prompt(plan: CheckPlan, decidable: Sequence[CheckItem], evidence: E
         f"CHECKS\n{checks}\n\n"
         f"CLOSING SUMMARY OF THE WORK\n{final}\n\n"
         f"OBSERVATIONS\n" + ("\n\n".join(observations) or "(none)")
-    )
-
-
-def _missing_by_request(evidence: Evidence) -> dict[tuple, str]:
-    return {
-        _key(item.request): item.error or "evidence was not captured"
-        for item in evidence.items
-        if not item.available
-    }
-
-
-def _key(request: EvidenceRequest) -> tuple:
-    return (request.connector, request.probe, json.dumps(dict(request.args), sort_keys=True))
-
-
-def _all_unchecked(plan: CheckPlan, undecidable: Mapping[str, str]) -> Judgement:
-    if plan.is_empty:
-        reason = "; ".join(plan.unsatisfiable) or "the plan contains no checks"
-        return Judgement(outcome=Outcome.UNCHECKED, error=reason)
-    outcomes = tuple(
-        CheckOutcome(item.id, CheckStatus.UNCHECKED, undecidable.get(item.id, "no evidence"))
-        for item in plan.items
-    )
-    return _assemble(outcomes, "")
-
-
-def _assemble(outcomes: tuple[CheckOutcome, ...], reasoning: str) -> Judgement:
-    """A Golden is one statement. Verifying part of it does not establish that
-    the task was done, so any unchecked check leaves the whole Attempt unscored.
-    """
-    if any(c.status is CheckStatus.UNCHECKED for c in outcomes) or not outcomes:
-        return Judgement(
-            outcome=Outcome.UNCHECKED, checks=outcomes, score=0.0, reasoning=reasoning
-        )
-    passed = sum(1 for c in outcomes if c.status is CheckStatus.PASS)
-    return Judgement(
-        outcome=Outcome.GRADED,
-        checks=outcomes,
-        score=passed / len(outcomes),
-        reasoning=reasoning,
     )
 
 
