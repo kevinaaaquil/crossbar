@@ -23,12 +23,12 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 5 | `agents` + `roster` — `ModelAgent`, model roles | **done** | 38 |
 | 6 | `evidence` — capture, serialise, reload | **done** | 23 |
 | 7 | `judging` — Check Plan, grading, blinding | **done** | 35 |
-| 8 | `orchestrator` — roles, ordering, judging, storage, queue model | next | — |
-| 9 | `dump` — zip the run | not started | — |
+| 8 | `orchestrator` — roles, ordering, judging, storage, queue model | **done** | 32 |
+| 9 | `dump` — zip the run | next | — |
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 319
+**Total tests:** 351
 
 ---
 
@@ -147,6 +147,26 @@ establish the Task was done.
 Three blinding tests hold the line: no identity words in the grading prompt, no
 hint the judge might be grading its own work, and no pairwise phrasing (grading
 is one Attempt against the Golden, which is less biased than "which is better").
+
+### Step 8 — orchestrator — done
+Plan, execute, capture, judge, store. 32 tests.
+
+Order is Test-major then role: every Check Plan for a Test is derived first,
+then the Candidate's Attempts, then the Baseline's. A test asserts a Test
+finishes both roles before the next Test starts, which is what makes an aborted
+run still yield a usable comparison.
+
+Judging is opt-in per Test and defaults to the first Test only. Evidence is
+captured even when judging is off, so an unjudged Test can be judged later
+without re-running it — `Orchestrator.judge_stored` does exactly that, and a
+test asserts it reuses the stored plan rather than regenerating it.
+
+The queue is built before anything runs and carries pending/running/done/failed
+per unit. One test watches events mid-run and asserts exactly one item is
+`running` at a time, which is the serial guarantee the TUI will render.
+
+Containment is covered three ways: a provider failure, an agent that raises, and
+an environment that will not start. None of them stop the run.
 
 ---
 
