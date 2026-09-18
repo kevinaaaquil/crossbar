@@ -12,7 +12,6 @@ from crossbar.providers.base import (
 )
 from crossbar.providers.openai_compat import OpenAICompatProvider
 from crossbar.providers.anthropic import AnthropicProvider
-from crossbar.providers.mock import MockProvider
 from crossbar.providers.scripted import ScriptedProvider, scripted_step
 
 __all__ = [
@@ -20,7 +19,6 @@ __all__ = [
     "CompletionRequest",
     "CompletionResponse",
     "Message",
-    "MockProvider",
     "OpenAICompatProvider",
     "Provider",
     "ProviderError",

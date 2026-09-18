@@ -39,8 +39,6 @@ Homepage = "https://github.com/kevinaaaquil/crossbar"
 Documentation = "https://github.com/kevinaaaquil/crossbar/blob/main/docs/WALKTHROUGH.md"
 Issues = "https://github.com/kevinaaaquil/crossbar/issues"
 
-[project.scripts]
-crossbar = "crossbar.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
