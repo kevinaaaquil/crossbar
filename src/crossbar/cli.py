@@ -84,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     demo.add_argument("--out", default="runs/demo", help="where to write results")
     demo.add_argument("--repeats", type=int, default=1)
+    demo.add_argument("--quiet", action="store_true")
     demo.set_defaults(handler=_cmd_demo)
 
     tui = sub.add_parser("tui", help="the interactive terminal app")
@@ -239,7 +240,9 @@ def _cmd_demo(args) -> int:
 
     print("Running the shipped example with scripted stand-in models.")
     print("Nothing is connected: this shows the shape of the output, not a measurement.\n")
-    result = run_demo(args.out, repeats=args.repeats, on_event=_progress)
+    result = run_demo(
+        args.out, repeats=args.repeats, on_event=None if args.quiet else _progress
+    )
     print()
     analysis = analyze(result)
     write_markdown(analysis, Path(args.out) / "report.md")

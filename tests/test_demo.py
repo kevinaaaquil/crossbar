@@ -62,3 +62,11 @@ class TestDemoCommand:
         capsys.readouterr()
         assert main(["report", str(tmp_path), "--json"]) == 0
         assert json.loads(capsys.readouterr().out)["models"]
+
+
+class TestDemoQuiet:
+    def test_progress_lines_can_be_suppressed(self, tmp_path, capsys):
+        main(["demo", "--out", str(tmp_path), "--quiet"])
+        out = capsys.readouterr().out
+        assert "VERDICT" in out.upper()
+        assert "[  1/" not in out
