@@ -362,20 +362,25 @@ so plainly rather than burying it.
 
 ---
 
-## Open questions
+## Deferred — revisit later
 
-Unresolved. Do not guess; ask.
+None of these block building the MVP. They are recorded so they are not
+rediscovered as surprises, each with the trigger that should bring it back.
+**Do not guess at these; raise them when the trigger fires.**
 
-1. **Can the user edit a Check Plan?** Showing it to them implies they can
-   correct it when the judge gets it wrong. UI decision, not yet taken.
-2. **Deterministic plan items.** Whether individual Check Plan items can be
-   marked machine-checkable and settled with no judge call — state diffs, schema
-   validation, file existence. A direct lever on the judging bill.
-4. **Connector set: fixed per Task or user-varied?** (see decision above)
-5. **Browser sequencing.** Backend-only containers first with browser second, or
-   is a UI-driving Task the motivating case that must be in the MVP?
-6. **Judge consistency across re-judging.** If a Test is re-judged later, must
-   it produce the same verdict as the first pass? If not, which one counts?
+| # | Question | Revisit when |
+|---|---|---|
+| 1 | **Machine-checkable plan items.** Can individual Check Plan items be settled deterministically — state diffs, schema validation, file existence — with no judge call at all? Same question as deterministic pre-checks. **The main lever on the judging bill.** | Judging cost becomes a real number, or a user complains about spend |
+| 2 | **Can the user edit a Check Plan?** Showing it to them implies they can correct one the judge got wrong. | A user hits a plan that is wrong and has no way to fix it |
+| 3 | **Connector set: fixed per Task, or user-varied?** Fixed keeps the comparison controlled; varying it answers a different question ("does my model need browser access for this?"). Moot while MCP is the only connector. | A second connector exists |
+| 4 | **Browser connector.** Backend-only containers first, browser second — or is a UI-driving Task the motivating case? | Backend-only MCP works end to end |
+| 5 | **Re-judge verdict conflicts.** If a Test is re-judged and the verdict differs from the first pass, which one counts? | Re-judging is actually implemented |
+| 6 | **Parallel execution.** Multiple containers at once. The orchestrator keeps the seam; it is defaulted to serial. | Serial throughput becomes the bottleneck |
+| 7 | **Judge self-agreement measurement.** Grade the same evidence twice at temperature 0 and report how often the verdict holds. | Before anyone makes a real decision on these numbers |
+| 8 | **Independent-judge comparison.** When Judge == Baseline the conflict of interest is structural. With an independent judge on even a sample, measure and report the gap. | Same as 7 |
+
+Items 7 and 8 are not nice-to-haves. The product's claim is statistical honesty,
+and an unmeasured judge quietly undermines it.
 
 ---
 
