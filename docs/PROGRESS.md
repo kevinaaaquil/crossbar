@@ -18,9 +18,9 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 0 | Carry-over: `stats`, `providers`, `mcpclient`, `trace` | **done** | 95 |
 | 1 | `domain` — Test, Task, Golden, limits, env spec, roles | **done** | 48 |
 | 2 | `connectors` — protocol, registry, `McpConnector` | **done** | 37 |
-| 3 | `environment` — local + docker, reset between attempts | next | — |
-| 4 | `harness` — connector-routed agent loop | not started | — |
-| 5 | `agents` — `ModelAgent`, `CliAgent` | not started | — |
+| 3 | `environment` — local + docker, reset between attempts | **done** | 24 |
+| 4 | `harness` — connector-routed agent loop | next | — |
+| 5 | `agents` — `ModelAgent`; `CliAgent` *(nice to have)* | not started | — |
 | 6 | `evidence` — capture, serialise, reload | not started | — |
 | 7 | `judging` — Check Plan, grading, blinding | not started | — |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | not started | — |
@@ -28,7 +28,7 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 182
+**Total tests:** 206
 
 ---
 
@@ -77,12 +77,27 @@ refuses a tool it cannot establish as read-only.
 consume it: workspace, command prefix, env vars, endpoints, and `${VAR}`
 expansion with `CROSSBAR_PYTHON` and `CROSSBAR_WORKSPACE` always available.
 
+### Step 3 — environment — done
+`LocalEnvironment` and `DockerEnvironment` behind one protocol, plus the
+factory. 24 tests; docker is driven against a stub binary that execs through, so
+a real MCP server answers over `docker exec` without a daemon.
+
+`reset()` recreates rather than cleans. The test that matters asserts an Attempt
+cannot observe state left by the previous one — it writes a ticket priority,
+resets, and checks the value is back to its seed.
+
+Docker's workspace is a path **inside** the container, since that is where the
+servers run and where evidence probes will read from.
+
 ---
 
 ## Discovered along the way
 
 Notes that do not belong in the design doc but should not be lost.
 
+- Connecting an agent CLI (Claude Code, Codex) is **nice to have, not required**
+  for the MVP. The `Agent` abstraction still lands in step 5 because it is cheap
+  and keeps the seam; `CliAgent` itself can be deferred.
 - `mcpclient.ToolSpec` did not parse MCP tool `annotations`, so `readOnlyHint`
   never reached the connector. Added with a test. This is the first change to a
   carry-over module in the rebuild.

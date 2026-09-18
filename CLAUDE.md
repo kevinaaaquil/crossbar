@@ -359,6 +359,10 @@ and nothing exposes one" — instead of discovering it as `Unchecked` afterwards
 **Decided.** The user may connect an agent CLI — Claude Code, Codex, or similar
 — and assign it as Candidate, Baseline or Judge, exactly like a model endpoint.
 
+**Priority: nice to have, not required for the MVP.** The `Agent` abstraction
+below is worth landing regardless, because it is cheap and keeps the seam open.
+`CliAgent` itself can wait until the rest of the product works.
+
 **Design consequence: an `Agent` abstraction sits above the Harness.** An Agent
 is anything that can execute a Task in an Environment and return a Trajectory
 plus a final answer. Two kinds:

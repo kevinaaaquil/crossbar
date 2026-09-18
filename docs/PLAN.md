@@ -66,7 +66,9 @@ return a Trajectory plus a final answer.
 
 - `ModelAgent` — the Harness plus a model client.
 - `CliAgent` — an external agent CLI (Claude Code, Codex) in headless mode,
-  handed the same connectors via a generated config.
+  handed the same connectors via a generated config. **Nice to have, not
+  required for the MVP** — build `ModelAgent` and the seam first, and add this
+  only if the rest is done.
 - Both satisfy one protocol, so nothing downstream knows the difference.
 - A `CliAgent` is flagged as bringing its own harness, so the report can label
   the comparison as a product comparison rather than a controlled one.
