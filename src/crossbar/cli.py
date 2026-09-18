@@ -1,0 +1,340 @@
+"""The crossbar command line.
+
+Seven verbs: check what you wrote, run it, judge a stored run, read the report,
+zip it up, check the machine, and open the terminal app.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+from pathlib import Path
+
+from crossbar.analysis import analyze
+from crossbar.connectors import known_connectors
+from crossbar.domain import DomainError, Role, load_test
+from crossbar.dump import DumpError, create_dump
+from crossbar.judging import Judge
+from crossbar.orchestrator import Orchestrator, RunEvent, load_run
+from crossbar.report import render_report, write_markdown
+from crossbar.roster import Roster, RosterError, build_provider, load_roster
+
+DEFAULT_ROSTER = "roster.yaml"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _parser()
+    args = parser.parse_args(argv if argv is not None else sys.argv[1:])
+    if not getattr(args, "command", None):
+        parser.print_usage()
+        print("\nStart with:  crossbar validate     then:  crossbar run")
+        return 2
+    return args.handler(args)
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="crossbar",
+        description="Compare your own model against a frontier model on your own tasks.",
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    validate = sub.add_parser("validate", help="check the roster and tests before spending anything")
+    _common(validate)
+    validate.set_defaults(handler=_cmd_validate)
+
+    run = sub.add_parser("run", help="run the tests and judge the results")
+    _common(run)
+    run.add_argument("--out", default="runs", help="where to write results")
+    run.add_argument("--repeats", type=int, help="override each Test's repeat count")
+    run.add_argument("--judge-tests", type=int, default=1,
+                     help="how many Tests to judge (judging is the expensive part)")
+    run.add_argument("--no-judge", action="store_true", help="execute without judging")
+    run.add_argument("--quiet", action="store_true")
+    run.set_defaults(handler=_cmd_run)
+
+    judge = sub.add_parser("judge", help="judge a stored run without re-running it")
+    judge.add_argument("run_dir")
+    judge.add_argument("--roster", default=DEFAULT_ROSTER)
+    judge.add_argument("--test", action="append", dest="tests",
+                       help="only judge this Test (repeatable)")
+    judge.add_argument("--scripted-pass", action="store_true",
+                       help="grade everything as passing, for checking the plumbing")
+    judge.set_defaults(handler=_cmd_judge)
+
+    report = sub.add_parser("report", help="render a stored run")
+    report.add_argument("run_dir", nargs="?", default="runs")
+    report.add_argument("--markdown", help="also write the report here")
+    report.add_argument("--json", action="store_true", help="machine-readable output")
+    report.set_defaults(handler=_cmd_report)
+
+    dump = sub.add_parser("dump", help="zip a run for inspection or review")
+    dump.add_argument("run_dir", nargs="?", default="runs")
+    dump.add_argument("--out", help="where to write the zip")
+    dump.set_defaults(handler=_cmd_dump)
+
+    doctor = sub.add_parser("doctor", help="check this machine can run what you configured")
+    doctor.add_argument("--roster", default=DEFAULT_ROSTER)
+    doctor.set_defaults(handler=_cmd_doctor)
+
+    tui = sub.add_parser("tui", help="the interactive terminal app")
+    _common(tui)
+    tui.set_defaults(handler=_cmd_tui)
+    return parser
+
+
+def _common(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--roster", default=DEFAULT_ROSTER, help="the models you connected")
+    parser.add_argument("--test", action="append", dest="tests", required=False,
+                        help="a Test directory (repeatable)")
+
+
+# -- commands --------------------------------------------------------------
+
+
+def _cmd_validate(args) -> int:
+    loaded = _load(args)
+    if loaded is None:
+        return 1
+    roster, tests = loaded
+
+    print(f"Roster   {args.roster}")
+    for role in (Role.CANDIDATE, Role.BASELINE, Role.JUDGE):
+        print(f"  {role.value:<10} {roster.assigned(role).id}")
+    if roster.judge_is_baseline:
+        print("\n  Note: the baseline is also the judge, so it will grade its own")
+        print("  attempts. They are blinded, but connect a separate judge before")
+        print("  relying on this for a decision.")
+
+    total = 0
+    print()
+    for test in tests:
+        attempts = len(test.tasks) * test.repeats * len(roster.execution_roles)
+        total += attempts
+        print(f"Test     {test.name}: {len(test.tasks)} tasks x {test.repeats} repeats "
+              f"= {attempts} attempts")
+        for task in test.tasks:
+            print(f"  - {task.id}")
+    print(f"\nTotal    {total} attempts")
+    return 0
+
+
+def _cmd_run(args) -> int:
+    loaded = _load(args)
+    if loaded is None:
+        return 1
+    roster, tests = loaded
+
+    if args.repeats:
+        tests = [_with_repeats(t, args.repeats) for t in tests]
+
+    # Even with --no-judge we still build the judge, because the Check Plan is
+    # what tells us which evidence to capture. Skip it and the run cannot be
+    # judged later without being re-run, which defeats the point of deferring.
+    judge = Judge(build_provider(roster.assigned(Role.JUDGE)))
+    orchestrator = Orchestrator(
+        roster=roster,
+        tests=tests,
+        results_dir=args.out,
+        judge=judge,
+        judge_tests=0 if args.no_judge else args.judge_tests,
+        on_event=None if args.quiet else _progress,
+    )
+    result = orchestrator.run()
+    if not args.quiet:
+        print()
+
+    analysis = analyze(result)
+    write_markdown(analysis, Path(args.out) / "report.md")
+    print(render_report(analysis))
+    print(f"\nResults  {Path(args.out) / 'run.json'}")
+    print(f"Report   {Path(args.out) / 'report.md'}")
+    return 0
+
+
+def _cmd_judge(args) -> int:
+    run_dir = Path(args.run_dir)
+    if not (run_dir / "run.json").exists():
+        print(f"error: no run found at {run_dir}")
+        return 1
+
+    if args.scripted_pass:
+        judge = _PassEverything()
+    else:
+        try:
+            roster = load_roster(args.roster)
+        except RosterError as exc:
+            print(f"error: {exc}")
+            return 1
+        judge = Judge(build_provider(roster.assigned(Role.JUDGE)))
+
+    result = Orchestrator.judge_stored(run_dir, judge=judge, tests=args.tests)
+    print(render_report(analyze(result)))
+    return 0
+
+
+def _cmd_report(args) -> int:
+    run_dir = Path(args.run_dir)
+    if not (run_dir / "run.json").exists():
+        print(f"error: no run found at {run_dir}")
+        return 1
+    analysis = analyze(load_run(run_dir / "run.json"))
+    if args.json:
+        print(json.dumps(_as_json(analysis), indent=2))
+        return 0
+    print(render_report(analysis))
+    if args.markdown:
+        print(f"\nWrote {write_markdown(analysis, args.markdown)}")
+    return 0
+
+
+def _cmd_dump(args) -> int:
+    try:
+        path = create_dump(args.run_dir, args.out)
+    except DumpError as exc:
+        print(f"error: {exc}")
+        return 1
+    print(f"Wrote {path}")
+    return 0
+
+
+def _cmd_doctor(args) -> int:
+    print("crossbar doctor\n")
+    print(f"  python       {sys.version.split()[0]}  ({sys.executable})")
+    print(f"  docker       {shutil.which('docker') or 'not found — only kind: local will work'}")
+    print(f"  connectors   {', '.join(sorted(known_connectors()))}")
+    print()
+
+    try:
+        roster = load_roster(args.roster)
+    except RosterError as exc:
+        print(f"  roster       {exc}")
+        return 0
+
+    print(f"  roster       {args.roster}")
+    for model in roster.models:
+        if model.api_key():
+            state = "ready"
+        elif model.api_key_env:
+            state = f"no key: set {model.api_key_env}"
+        else:
+            state = "no api_key_env set (fine if the endpoint needs no key)"
+        print(f"    - {model.id:<20} {state}")
+    return 0
+
+
+def _cmd_tui(args) -> int:
+    from crossbar.tui import run_app
+
+    return run_app(roster_path=args.roster, test_paths=args.tests or [])
+
+
+# -- helpers ---------------------------------------------------------------
+
+
+def _load(args):
+    try:
+        roster = load_roster(args.roster)
+    except RosterError as exc:
+        print(f"error: {exc}")
+        return None
+    paths = args.tests or []
+    if not paths:
+        print("error: no tests given; pass --test <directory>")
+        return None
+    tests = []
+    for path in paths:
+        try:
+            tests.append(load_test(path, known_connectors=known_connectors()))
+        except DomainError as exc:
+            print(f"error: {exc}")
+            return None
+    return roster, tests
+
+
+def _with_repeats(test, repeats: int):
+    return type(test)(
+        name=test.name, tasks=test.tasks, environment=test.environment,
+        description=test.description, repeats=repeats, path=test.path,
+    )
+
+
+def _progress(event: RunEvent) -> None:
+    if event.kind != "attempt_finished" or event.item is None:
+        return
+    mark = "ok" if event.item.state == "done" else "failed"
+    print(
+        f"  [{event.completed:>3}/{event.total:<3}] {event.item.model_id:<18} "
+        f"{event.item.task_id:<20} {mark}",
+        flush=True,
+    )
+
+
+def _as_json(analysis) -> dict:
+    verdict = analysis.verdict
+    comparison = analysis.comparison
+    return {
+        "models": [
+            {
+                "model_id": m.model_id,
+                "role": m.role.value,
+                "pass_rate": m.pass_rate,
+                "ci_low": m.ci_low,
+                "ci_high": m.ci_high,
+                "attempts": m.n_attempts,
+                "graded": m.n_graded,
+                "unchecked": m.n_unchecked,
+                "failed": m.n_failed,
+                "total_cost": m.total_cost,
+                "cost_per_success": m.cost_per_success,
+            }
+            for m in analysis.models
+        ],
+        "comparison": None if comparison is None else {
+            "candidate": comparison.candidate_id,
+            "baseline": comparison.baseline_id,
+            "delta": comparison.delta,
+            "ci_low": comparison.ci_low,
+            "ci_high": comparison.ci_high,
+            "p_value": comparison.p_value,
+            "significant": comparison.significant,
+            "n_tasks": comparison.n_tasks,
+        },
+        "verdict": {
+            "recommend_switch": verdict.recommend_switch,
+            "savings_usd": verdict.savings_usd,
+            "savings_pct": verdict.savings_pct,
+            "confidence": verdict.confidence,
+            "caveats": list(verdict.caveats),
+        },
+        "unchecked_reasons": list(analysis.unchecked_reasons),
+    }
+
+
+class _PassEverything:
+    """A judge that grades everything as passing, for checking the plumbing.
+
+    It never talks to a model, so it is safe to point at a stored run when you
+    only want to know that judging and storage are wired up correctly.
+    """
+
+    def make_plan(self, task, catalogue):
+        raise NotImplementedError("re-judging always reuses the stored plan")
+
+    def grade(self, plan, evidence):
+        from crossbar.judging.judge import _assemble, _key, _missing_by_request
+        from crossbar.judging import CheckOutcome, CheckStatus
+
+        missing = _missing_by_request(evidence)
+        outcomes = []
+        for item in plan.items:
+            reasons = [missing[_key(r)] for r in item.evidence if _key(r) in missing]
+            status = CheckStatus.UNCHECKED if reasons else CheckStatus.PASS
+            outcomes.append(CheckOutcome(item.id, status, "; ".join(reasons) or "scripted pass"))
+        return _assemble(tuple(outcomes), "scripted: everything passes")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

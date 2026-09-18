@@ -347,3 +347,20 @@ class TestRejudging:
         attempt_dir = sorted((tmp_path / "attempts").iterdir())[0]
         stored = json.loads((attempt_dir / "judgement.json").read_text())
         assert stored["outcome"] == "graded"
+
+
+class TestPlansAreMadeEvenWhenGradingIsOff:
+    """Deferring judgement must not make it impossible."""
+
+    def test_plans_are_written_with_judging_switched_off(self, tmp_path):
+        orchestrate(tmp_path, judge_tests=0).run()
+        assert (tmp_path / "plans" / "escalate-outage.json").exists()
+
+    def test_evidence_is_captured_with_judging_switched_off(self, tmp_path):
+        result = orchestrate(tmp_path, judge_tests=0).run()
+        assert all(a.evidence.items for a in result.attempts)
+
+    def test_such_a_run_can_be_judged_later(self, tmp_path):
+        orchestrate(tmp_path, judge_tests=0).run()
+        rejudged = Orchestrator.judge_stored(tmp_path, judge=judge())
+        assert all(a.judgement.outcome is Outcome.GRADED for a in rejudged.attempts)

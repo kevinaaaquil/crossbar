@@ -40,6 +40,9 @@ Documentation = "https://github.com/kevinaaaquil/crossbar/blob/main/docs/WALKTHR
 Issues = "https://github.com/kevinaaaquil/crossbar/issues"
 
 
+[project.scripts]
+crossbar = "crossbar.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

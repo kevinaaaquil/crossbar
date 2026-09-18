@@ -140,6 +140,11 @@ class Orchestrator:
     def _make_plans(self, test: Test) -> dict[str, CheckPlan]:
         """One plan per Task, before any Attempt of that Test runs.
 
+        Derived whenever a judge is available, **even when grading is switched
+        off**: the plan is what says which evidence to capture, so a run without
+        one can never be judged later without being re-run. Planning is one call
+        per Task; grading is one per Attempt, which is where the cost lives.
+
         The Environment is brought up once here purely to read the probe
         catalogue, so the judge can only ask for evidence something can supply.
         """
