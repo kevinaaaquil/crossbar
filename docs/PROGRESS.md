@@ -26,9 +26,9 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | **done** | 32 |
 | 9 | `dump` — zip the run | **done** | 11 |
 | 10 | `analysis` + `report` | **done** | 48 |
-| 11 | TUI — connect models, run, live queue view, results | next | — |
+| 11 | TUI — connect models, run, live queue view, results | in progress (subagent) | — |
 
-**Total tests:** 410
+**Total tests:** 470 (excluding the TUI, in progress)
 
 ---
 
@@ -186,6 +186,32 @@ side is never silently compared against a real score on the other.
 
 Caveats are generated, not optional: the baseline judging itself, a model with
 more than 20% unchecked attempts, and any test that ran but was not judged.
+
+### CLI — done
+Seven verbs: validate, run, judge, report, dump, doctor, tui. 21 tests.
+
+Writing it found a real gap. A run with judging switched off produced no Check
+Plan — and the plan is what says which evidence to capture — so such a run could
+never be judged later without being re-run, defeating the point of deferring.
+Plans are now derived whenever a judge is available, independently of whether
+grading happens. Planning is one call per Task; grading is one per Attempt, and
+that is where the cost lives.
+
+### Demo — done
+`examples/support-triage`: four Tasks with prose Goldens, over the ticketing MCP
+server now shipped in `crossbar.demo`. Plus `roster.yaml` showing how models are
+connected. The directory is `examples/` rather than `tests/` as the plan
+originally said, because `tests/` is pytest's.
+
+### End-to-end — done
+`tests/test_end_to_end.py`: roster and Test loaded from disk, through planning,
+execution, capture, judging, analysis, report and dump. 16 tests. Only the model
+and the judge are scripted — the MCP servers, environment, connectors and every
+file written are real.
+
+The judge used here reads the captured dump and decides from actual state, so
+the candidate that did the work passes and the baseline that only described it
+fails. That is the whole product working, minus a live model.
 
 ---
 
