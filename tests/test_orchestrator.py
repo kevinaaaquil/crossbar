@@ -318,9 +318,12 @@ class TestStorage:
         assert result.roles["candidate"] == "local"
         assert result.roles["baseline"] == "frontier"
 
-    def test_the_run_records_the_judge_conflict(self, tmp_path):
-        """Judge defaults to the baseline, and the report has to be able to say so."""
-        assert orchestrate(tmp_path).run().judge_is_baseline is True
+    def test_the_judge_conflict_is_carried_into_storage(self, tmp_path):
+        """The report has to be able to say the baseline graded its own work."""
+        scripted = judge()
+        scripted.model_id = "frontier"
+        orchestrate(tmp_path, judge_obj=scripted).run()
+        assert load_run(tmp_path / "run.json").judge_is_baseline is True
 
 
 class TestRejudging:
@@ -364,3 +367,24 @@ class TestPlansAreMadeEvenWhenGradingIsOff:
         orchestrate(tmp_path, judge_tests=0).run()
         rejudged = Orchestrator.judge_stored(tmp_path, judge=judge())
         assert all(a.judgement.outcome is Outcome.GRADED for a in rejudged.attempts)
+
+
+class TestJudgeConflictIsEstablishedNotAssumed:
+    """The conflict of interest is a fact about which model judged, not about
+    what the roster would have fallen back to."""
+
+    def test_a_judge_that_names_no_model_reports_no_conflict(self, tmp_path):
+        result = orchestrate(tmp_path).run()
+        assert result.judge_is_baseline is False
+
+    def test_a_judge_that_is_the_baseline_reports_the_conflict(self, tmp_path):
+        scripted = judge()
+        scripted.model_id = "frontier"
+        result = orchestrate(tmp_path, judge_obj=scripted).run()
+        assert result.judge_is_baseline is True
+
+    def test_an_independent_judge_reports_no_conflict(self, tmp_path):
+        scripted = judge()
+        scripted.model_id = "some-third-model"
+        result = orchestrate(tmp_path, judge_obj=scripted).run()
+        assert result.judge_is_baseline is False

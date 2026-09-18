@@ -62,8 +62,11 @@ class JudgingError(RuntimeError):
 
 
 class Judge:
-    def __init__(self, provider, max_tokens: int = 4096) -> None:
+    def __init__(self, provider, model_id: str | None = None, max_tokens: int = 4096) -> None:
         self.provider = provider
+        self.model_id = model_id
+        """Which roster model is judging. Lets the report establish whether the
+        judge is also the baseline rather than assuming it."""
         self.max_tokens = max_tokens
         self.plans_made = 0
         self.gradings_made = 0

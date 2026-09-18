@@ -79,6 +79,13 @@ def _parser() -> argparse.ArgumentParser:
     doctor.add_argument("--roster", default=DEFAULT_ROSTER)
     doctor.set_defaults(handler=_cmd_doctor)
 
+    demo = sub.add_parser(
+        "demo", help="run the shipped example with scripted models, to see the output"
+    )
+    demo.add_argument("--out", default="runs/demo", help="where to write results")
+    demo.add_argument("--repeats", type=int, default=1)
+    demo.set_defaults(handler=_cmd_demo)
+
     tui = sub.add_parser("tui", help="the interactive terminal app")
     _common(tui)
     tui.set_defaults(handler=_cmd_tui)
@@ -133,7 +140,8 @@ def _cmd_run(args) -> int:
     # Even with --no-judge we still build the judge, because the Check Plan is
     # what tells us which evidence to capture. Skip it and the run cannot be
     # judged later without being re-run, which defeats the point of deferring.
-    judge = Judge(build_provider(roster.assigned(Role.JUDGE)))
+    judge_model = roster.assigned(Role.JUDGE)
+    judge = Judge(build_provider(judge_model), model_id=judge_model.id)
     orchestrator = Orchestrator(
         roster=roster,
         tests=tests,
@@ -168,7 +176,8 @@ def _cmd_judge(args) -> int:
         except RosterError as exc:
             print(f"error: {exc}")
             return 1
-        judge = Judge(build_provider(roster.assigned(Role.JUDGE)))
+        judge_model = roster.assigned(Role.JUDGE)
+        judge = Judge(build_provider(judge_model), model_id=judge_model.id)
 
     result = Orchestrator.judge_stored(run_dir, judge=judge, tests=args.tests)
     print(render_report(analyze(result)))
@@ -222,6 +231,22 @@ def _cmd_doctor(args) -> int:
         else:
             state = "no api_key_env set (fine if the endpoint needs no key)"
         print(f"    - {model.id:<20} {state}")
+    return 0
+
+
+def _cmd_demo(args) -> int:
+    from crossbar.demo import run_demo
+
+    print("Running the shipped example with scripted stand-in models.")
+    print("Nothing is connected: this shows the shape of the output, not a measurement.\n")
+    result = run_demo(args.out, repeats=args.repeats, on_event=_progress)
+    print()
+    analysis = analyze(result)
+    write_markdown(analysis, Path(args.out) / "report.md")
+    print(render_report(analysis))
+    print(f"\nResults  {Path(args.out) / 'run.json'}")
+    print("\nBoth models here are fixed scripts. Connect real ones in roster.yaml,")
+    print("then:  crossbar run --test examples/support-triage")
     return 0
 
 

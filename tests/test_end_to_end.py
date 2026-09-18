@@ -196,10 +196,12 @@ class TestTheWholePipeline:
         assert verdict.recommend_switch is True
         assert verdict.savings_usd > 0
 
-    def test_the_conflict_of_interest_is_carried_through(self, finished_run):
+    def test_no_conflict_is_claimed_when_the_judge_is_independent(self, finished_run):
+        """This run used a judge of its own, so the baseline did not grade
+        itself and the report must not say it did."""
         result, _ = finished_run
-        assert result.judge_is_baseline is True
-        assert any("judge" in c.lower() for c in analyze(result).verdict.caveats)
+        assert result.judge_is_baseline is False
+        assert not any("graded its own" in c.lower() for c in analyze(result).verdict.caveats)
 
     def test_the_report_renders(self, finished_run):
         result, _ = finished_run

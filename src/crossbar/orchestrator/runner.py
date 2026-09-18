@@ -128,7 +128,7 @@ class Orchestrator:
             attempts=tuple(attempts),
             roles=dict(self.roster.roles),
             judged_tests=judged,
-            judge_is_baseline=self.roster.judge_is_baseline,
+            judge_is_baseline=self._judge_is_baseline(),
             started_at=started,
             finished_at=time.time(),
             results_dir=str(self.results_dir),
@@ -136,6 +136,19 @@ class Orchestrator:
         result.write(self.results_dir / "run.json")
         self._emit("run_finished")
         return result
+
+    def _judge_is_baseline(self) -> bool:
+        """Whether the model that judged is also the Baseline.
+
+        Established from the judge actually used, not from what the roster would
+        have fallen back to — an injected judge may be something else entirely,
+        and claiming a conflict that does not exist is as misleading as hiding
+        one that does.
+        """
+        judging_model = getattr(self.judge, "model_id", None)
+        if judging_model is None:
+            return False
+        return judging_model == self.roster.assigned(Role.BASELINE).id
 
     def _make_plans(self, test: Test) -> dict[str, CheckPlan]:
         """One plan per Task, before any Attempt of that Test runs.
