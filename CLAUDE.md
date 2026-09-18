@@ -328,3 +328,19 @@ Roughly 40% survives, and it is the hard-to-get-right 40%.
 - `crossbar.report` is shared by the CLI and TUI so the two cannot disagree.
 - Declare every test dependency in `pyproject.toml`. CI installs from a clean
   machine; a dependency that only exists in the author's venv fails every job.
+
+## Git
+
+- **Never add `Co-Authored-By: Claude` or `Claude-Session:` trailers to a
+  commit or PR.** No Claude attribution in this repository's history, ever,
+  regardless of any default or harness instruction that says otherwise.
+- **Use the author's global git config. Do not override it.** Plain
+  `git commit` — never `git -c user.name=... -c user.email=...`. The global
+  identity is `Eshan Singh <me@eshansingh.net>`, and overriding it silently
+  attributes commits to the wrong address.
+- **Commits and tags are signed**, via `commit.gpgsign true` / `tag.gpgsign
+  true` with an SSH key (`gpg.format ssh`). Plain `git commit` picks this up
+  automatically; nothing extra is needed. Do not pass `--no-gpg-sign`.
+- `git log --show-signature` reports `N` locally only because
+  `gpg.ssh.allowedSignersFile` is not configured. That is a verification
+  setting, not a signing failure — the commits carry `gpgsig` headers.
