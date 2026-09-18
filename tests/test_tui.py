@@ -633,3 +633,48 @@ class TestJudgeCountControl:
                 await asyncio.sleep(0.05)
             judged = {a.test_name for a in app.result.attempts if a.judgement is not None}
             assert judged == {"Support triage", "Second"}
+
+
+class TestEntryPointWiring:
+    """`crossbar tui` must produce a judged run, like `crossbar run` does."""
+
+    def roster_and_test(self, tmp_path):
+        roster = tmp_path / "roster.yaml"
+        roster.write_text(
+            "models:\n"
+            "  - id: local\n    provider: openai\n    model: q\n"
+            "    base_url: http://localhost:1/v1\n"
+            "  - id: frontier\n    provider: anthropic\n    model: big\n"
+            "roles:\n  candidate: local\n  baseline: frontier\n"
+        )
+        return str(roster), "tests/fixtures/tests/support-triage"
+
+    def test_a_judge_is_wired_up_from_the_roster(self, tmp_path):
+        from crossbar.judging import Judge
+
+        roster, test = self.roster_and_test(tmp_path)
+        app = build_app(roster, [test], results_dir=str(tmp_path / "runs"))
+        assert isinstance(app.judge, Judge), "without a judge, a run produces no verdict"
+
+    def test_the_judging_model_is_named_so_the_conflict_can_be_reported(self, tmp_path):
+        roster, test = self.roster_and_test(tmp_path)
+        app = build_app(roster, [test], results_dir=str(tmp_path / "runs"))
+        assert app.judge.model_id == "frontier"
+
+    def test_an_explicit_judge_is_not_overridden(self, tmp_path):
+        roster, test = self.roster_and_test(tmp_path)
+        scripted = ScriptedJudge(plan=None)
+        app = build_app(roster, [test], results_dir=str(tmp_path / "runs"), judge=scripted)
+        assert app.judge is scripted
+
+    def test_unknown_connectors_are_caught_when_loading(self, tmp_path):
+        from crossbar.domain import DomainError
+
+        roster, _ = self.roster_and_test(tmp_path)
+        bad = tmp_path / "bad"
+        bad.mkdir()
+        (bad / "test.yaml").write_text("name: X\nenvironment: env.yaml\n")
+        (bad / "env.yaml").write_text("kind: local\nconnectors:\n  telepathy: {}\n")
+        (bad / "a.task.yaml").write_text("id: a\nprompt: p\ngolden: g\n")
+        with pytest.raises(DomainError, match="telepathy"):
+            build_app(roster, [str(bad)], results_dir=str(tmp_path / "runs"))

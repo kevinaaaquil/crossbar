@@ -39,11 +39,13 @@ from textual.widgets import (
 )
 
 from crossbar.analysis import Analysis, analyze
-from crossbar.domain import Test, load_test
+from crossbar.connectors import known_connectors
+from crossbar.domain import Role, Test, load_test
 from crossbar.dump import create_dump
+from crossbar.judging import Judge
 from crossbar.orchestrator import Orchestrator, RunEvent, RunResult
 from crossbar.report import render_report
-from crossbar.roster import Roster, load_roster
+from crossbar.roster import build_provider, Roster, load_roster
 from crossbar.tui.formatting import (
     attempt_line,
     queue_event_line,
@@ -334,10 +336,18 @@ def build_app(
     judge: Any = None,
     judge_tests: int = 1,
 ) -> CrossbarApp:
-    """Load a roster and some Tests from disk and wire up the app."""
+    """Load a roster and some Tests from disk and wire up the app.
+
+    A judge is built from the roster unless one is supplied. Without it a run
+    would produce no Check Plan, no evidence and no verdict — which is not what
+    anyone opening the app is asking for.
+    """
     roster = load_roster(roster_path)
-    tests = [load_test(path) for path in test_paths]
+    tests = [load_test(path, known_connectors=known_connectors()) for path in test_paths]
     target = results_dir or str(Path("runs") / time.strftime("%Y%m%d-%H%M%S"))
+    if judge is None:
+        judge_model = roster.assigned(Role.JUDGE)
+        judge = Judge(build_provider(judge_model), model_id=judge_model.id)
     return CrossbarApp(
         roster=roster,
         tests=tests,
