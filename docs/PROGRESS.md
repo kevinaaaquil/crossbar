@@ -19,8 +19,8 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 1 | `domain` — Test, Task, Golden, limits, env spec, roles | **done** | 48 |
 | 2 | `connectors` — protocol, registry, `McpConnector` | **done** | 37 |
 | 3 | `environment` — local + docker, reset between attempts | **done** | 24 |
-| 4 | `harness` — connector-routed agent loop | next | — |
-| 5 | `agents` — `ModelAgent`; `CliAgent` *(nice to have)* | not started | — |
+| 4 | `harness` — connector-routed agent loop | **done** | 19 |
+| 5 | `agents` — `ModelAgent`; `CliAgent` *(nice to have)* | next | — |
 | 6 | `evidence` — capture, serialise, reload | not started | — |
 | 7 | `judging` — Check Plan, grading, blinding | not started | — |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | not started | — |
@@ -28,7 +28,7 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 10 | statistics + report reconnect | not started | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 206
+**Total tests:** 225
 
 ---
 
@@ -88,6 +88,18 @@ resets, and checks the value is back to its seed.
 
 Docker's workspace is a path **inside** the container, since that is where the
 servers run and where evidence probes will read from.
+
+### Step 4 — harness — done
+The agent loop, routed through connectors. 19 tests.
+
+Tools are the union across every enabled connector and each call routes back to
+its owner; the first connector to claim a tool name keeps it, so a collision
+cannot silently redirect a call. A connector raising becomes a tool error fed
+back to the model, never a crash.
+
+One test greps the module source for `mcp` and `docker` and fails if either
+appears. A second exercises the loop with a non-MCP `EchoConnector` alongside
+the MCP one. Together they are what stop the seam quietly closing.
 
 ---
 
