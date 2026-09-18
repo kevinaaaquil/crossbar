@@ -47,7 +47,8 @@ currently uses a different word, the rename is listed in
 | **Judge** | A model used to analyse results against the Golden. Optional; falls back to the Baseline. Always blinded to whose attempts it is grading. |
 | **Dump** | A full zipped export of everything a run produced. For the user's own inspection or review by their own AI. We never need it to score: the Task tells us what to check. |
 | **Golden** | The known correct result for a Task, supplied by the user, in whatever form is natural. Never shaped to fit a check schema — the judge infers what to check from it. |
-| **Evidence** | Whatever was captured from an Attempt for the judge to examine. No fixed schema; determined by what the Golden implies. |
+| **Evidence** | Whatever was captured from an Attempt for the judge to examine. No fixed schema; determined by the Check Plan. |
+| **Check Plan** | What to inspect and what criteria to grade against, derived once per Task from Task + Golden before any Attempt runs, then applied to every Attempt of that Task. |
 | **Unchecked** | A Task outcome meaning the required evidence was unavailable, so no score was produced. Carries a reason. |
 
 ### Planned renames
@@ -84,10 +85,11 @@ currently uses a different word, the rename is listed in
                    Environment is alive: final answer · files · DB dumps ·
                    state snapshots. No fixed schema.
 
-6. JUDGING         optional judge model, blinded, infers what to check from
-                   Task + Golden and grades the Evidence; falls back to the
-                   Baseline if none is given. Outcomes: graded / unchecked
-                   (with a reason) / failed. Plus a Dump for the user.
+6. JUDGING         Check Plan derived once per Task from Task + Golden, before
+                   any Attempt; drives both capture and grading. Judge is
+                   blinded and falls back to the Baseline if none is given.
+                   Outcomes: graded / unchecked (with a reason) / failed.
+                   Plus a Dump for the user.
 
 7. ORCHESTRATION   one container, one Task at a time (for now)
                    order: per Test, Candidate then Baseline
@@ -306,6 +308,52 @@ Judging cannot depend on a live container.
 force-pushed over when it is ready. Never commit rebuild work directly to
 `main`.
 
+### 2026-09-19 — The Check Plan: derived once per Task, applied to every Attempt
+
+**Decided.** The judge does not decide what to inspect afresh on every Attempt.
+It derives a **Check Plan** once per Task, from the Task and its Golden, and
+that plan governs every Attempt of that Task.
+
+**The plan is generated before any Attempt runs.** This is forced by the fact
+that it drives evidence capture, and it has a second benefit worth protecting:
+**the criteria are fixed before any model output has been seen.** The plan is
+derived from Task + Golden only — never from an Attempt — so it cannot be
+tailored, consciously or otherwise, to whichever output is in front of the
+judge. Treat that as an integrity property and do not break it for convenience.
+
+**What the plan governs:**
+
+1. **Capture** — what evidence the orchestrator must collect from each Attempt
+   while the Environment is alive.
+2. **Grading** — the criteria each Attempt is scored against.
+
+**Rules:**
+
+- Made by the **Judge**; falls back to the **Baseline** when no Judge is
+  assigned, same as grading.
+- **Stored with the Task** and shown to the user.
+- **Reused on re-judge by default.** Regenerate only if the user explicitly asks
+  — otherwise a re-judge silently changes the criteria and old and new scores
+  stop being comparable.
+- Applied **identically to every Attempt** of that Task.
+
+**Why it matters:** without it, the judge might inspect the database on one
+Attempt and only the final text on another. The grades would then reflect which
+evidence happened to be examined rather than how the model performed, and the
+statistics would be comparing unlike things while looking perfectly healthy.
+
+**Bonus:** because the plan states what evidence is required, we can warn the
+user *before* spending anything on a run — "this Golden needs a database dump
+and nothing exposes one" — instead of discovering it as `Unchecked` afterwards.
+
+**Still open on this:**
+
+- Can the user **edit** the plan when the judge gets it wrong? Showing it to
+  them implies they can; that is a UI decision not yet taken.
+- Can individual plan items be marked **machine-checkable**, settled
+  deterministically with no judge call? That is the deterministic pre-check
+  question, and the plan is the natural place to express it.
+
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
 Noncommercial use free, including charities/schools/public bodies. Commercial
@@ -318,22 +366,11 @@ so plainly rather than burying it.
 
 Unresolved. Do not guess; ask.
 
-1. **Capture policy.** Given that the Golden implies what evidence is needed,
-   is that worked out *before* the run (so we capture exactly what is required)
-   or do we capture everything cheap and available and let the judge pick? The
-   first avoids huge payloads and reduces `Unchecked`; the second is simpler.
-   See the check-plan proposal below.
-2. **Check plan — proposed, needs sign-off.** Derive the judge's check plan
-   **once per Task** from Task + Golden, store it, show it to the user, and
-   apply it to every Attempt. Otherwise the judge may examine different evidence
-   on different Attempts, and the statistics stop comparing like with like. A
-   stored plan also tells the orchestrator what to capture, and makes
-   `Unchecked` predictable before a run rather than discovered after it.
-3. **Deterministic pre-checks.** Whether machine-checkable assertions (state
-   diffs, schema validation) run before the judge as a cheaper first tier, or
-   whether judging is the only mechanism. Bears directly on the judging budget:
-   anything settled deterministically is a judge call not paid for. If the check
-   plan exists, it could mark individual items as machine-checkable.
+1. **Can the user edit a Check Plan?** Showing it to them implies they can
+   correct it when the judge gets it wrong. UI decision, not yet taken.
+2. **Deterministic plan items.** Whether individual Check Plan items can be
+   marked machine-checkable and settled with no judge call — state diffs, schema
+   validation, file existence. A direct lever on the judging bill.
 4. **Connector set: fixed per Task or user-varied?** (see decision above)
 5. **Browser sequencing.** Backend-only containers first with browser second, or
    is a UI-driving Task the motivating case that must be in the MVP?
