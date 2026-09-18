@@ -44,7 +44,8 @@ currently uses a different word, the rename is listed in
 | **Harness** | Ours. The runtime that drives a model through a Task using the enabled Connectors. Fixed, not a variable, and invisible to the user. |
 | **Candidate** | The model being evaluated — typically the user's local or fine-tuned model. |
 | **Baseline** | The model it is compared against — typically a frontier model. |
-| **Judge** | A model the user connects, which our platform uses to analyse results against golden data. |
+| **Judge** | A model used to analyse results against the Golden. Optional; falls back to the Baseline. Always blinded to whose attempts it is grading. |
+| **Dump** | A self-contained export of a Task, its Golden, an Attempt's artifacts, trace and judge reasoning, for review by the user or their own AI. |
 | **Golden** | The known correct result for a Task, supplied by the user. |
 
 ### Planned renames
@@ -80,8 +81,9 @@ currently uses a different word, the rename is listed in
 5. ARTIFACTS       what an Attempt produced
                    final answer · files written · environment state snapshot
 
-6. JUDGING         judge model analyses artifacts against the Golden
-                   plus an optional human review pass
+6. JUDGING         optional judge model, blinded, grades artifacts against
+                   the Golden; falls back to the Baseline if none is given
+                   plus a Dump the user can review with their own AI
 
 7. ORCHESTRATION   one container, one Task at a time (for now)
                    repeats, isolation, failure containment
@@ -145,23 +147,58 @@ snapshot-restore is the faster option if startup time becomes the bottleneck.
 **Decided:** no parallelism in the MVP. Concurrency is designed for but not
 enabled: keep the seam in the orchestrator, default it to serial.
 
-### 2026-09-18 — Judging is a model, with an optional human check
+### 2026-09-18 — Judging: optional model, blinded, with an exportable dump
 
-**Decided:** a user-connected Judge model analyses each Attempt's artifacts
-against the Golden. The user may additionally perform their own check and
-override the judge's verdict.
+**Decided:**
 
-**Implication for the UI:** judge output must be stored in a reviewable form,
-and there must be a path for a human to mark a result pass/fail themselves. The
-judge's own reasoning has to be visible, not just its score.
+- A **Judge** model is **optional**. If the user connects one, it analyses each
+  Attempt's artifacts against the Golden.
+- **If no Judge is connected, the Baseline model is used to judge.**
+- **The Judge is never told whose attempts it is grading.** In particular, when
+  the Baseline is acting as Judge it must not know it is grading its own
+  attempts against a different model's.
+- There is **no human pass/fail review UI**. Instead we produce a **dump**: a
+  self-contained export of a Task, its Golden, an Attempt's artifacts, the trace
+  and the judge's reasoning, which a user can hand to their own AI — or read
+  themselves — for an independent opinion. That optionality is *why* our judge
+  can be optional.
 
-**Standing risk (raised, accepted, mitigate rather than avoid):** the product
-sells statistical honesty, and a judge is a stochastic grader. If the judge is
-noisy, the confidence intervals measure the judge's variance rather than the
-model's. Mitigations worth building: run the judge at temperature 0, and measure
-**judge self-agreement** on a sample (grade the same artifact twice, report how
-often it agrees). Reference-based judging against a Golden is substantially more
-reliable than open-ended quality judging, so the risk is real but bounded.
+**Why blinding matters:** LLM judges show self-preference — they score their own
+output higher. With the Baseline doubling as Judge, that conflict of interest is
+structural, and blinding is the minimum mitigation.
+
+**What blinding requires in practice** (all of it, or it leaks):
+
+1. Strip model identity from artifacts and from any trace the judge sees.
+2. Randomise attempt order; never present the candidate in a fixed position.
+3. Never phrase the prompt as "compare model X with model Y", or hint that an
+   attempt may be the judge's own.
+4. Scrub or flag self-identifying text in the agent's own output ("As Claude,
+   I..."), which leaks identity even with labels removed.
+5. Keep identity-correlated metadata (token counts, timings, model-specific
+   formatting quirks) out of the judged payload.
+
+**Prefer reference-based grading over pairwise.** Grading each Attempt
+independently against the Golden leaves less room for comparative bias than
+asking "which of these two is better". Pairwise is more sensitive but more
+biased; default to reference-based.
+
+**Honest limits, to state in the docs rather than paper over:**
+
+- Blinding is imperfect. Models often recognise their own style, and
+  self-preference survives the removal of labels.
+- When Judge == Baseline the conflict exists structurally. The report must say
+  so plainly on the verdict, and recommend connecting an independent judge for
+  any decision that matters.
+- This is measurable, and we should measure it: with an independent judge
+  available on even a sample, compare its scores with the baseline-as-judge
+  scores and report the gap. Also worth reporting judge **self-agreement** —
+  grade the same artifact twice at temperature 0 and see whether the verdict
+  holds.
+
+**Edge case:** if there is neither a Judge nor a Baseline (a single model run on
+its own), there is nothing to judge with. Either require one, or fall back to
+deterministic checks only, or emit the dump and no score.
 
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
@@ -187,6 +224,10 @@ Unresolved. Do not guess; ask.
 4. **Connector set: fixed per Task or user-varied?** (see decision above)
 5. **Browser sequencing.** Backend-only containers first with browser second, or
    is a UI-driving Task the motivating case that must be in the MVP?
+6. **Dump format and granularity.** Markdown for pasting into a chat, JSON for
+   machines, or both? Per Attempt, per Task, per Test, or failures-only? A whole
+   Test at 20 Tasks x 5 repeats is 100 Attempts, far too much to paste into
+   anything, so granularity is a real design decision rather than a detail.
 
 ---
 
