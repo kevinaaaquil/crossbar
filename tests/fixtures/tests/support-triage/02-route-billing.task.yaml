@@ -1,0 +1,8 @@
+id: route-billing
+name: Route billing tickets
+prompt: |
+  Every open ticket about invoices or billing must be assigned to "alice"
+  and tagged "billing". Do not touch resolved or closed tickets.
+golden: |
+  Tickets T-1002 and T-1005 are both assigned to "alice" and carry the
+  tag "billing". T-1006 is still assigned to "sam".

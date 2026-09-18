@@ -1,0 +1,12 @@
+id: escalate-outage
+name: Escalate the outage tickets
+prompt: |
+  Every open ticket that mentions an outage must be escalated to urgent
+  priority. Leave every other ticket's priority alone. Reply with the
+  ticket ids you escalated.
+golden: |
+  Tickets T-1001 and T-1004 both have priority "urgent".
+  No other ticket's priority has changed; T-1002 is still "normal".
+limits:
+  timeout_s: 60
+  max_steps: 10

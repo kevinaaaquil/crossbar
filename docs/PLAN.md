@@ -58,7 +58,23 @@ dependency replaced by connectors.
 **Done when:** a scripted model drives real MCP servers through connectors, and
 every stop condition is covered.
 
-## Step 5 — Evidence
+## Step 5 — Agents
+`src/crossbar/agents/`
+
+The `Agent` abstraction above the Harness: execute a Task in an Environment,
+return a Trajectory plus a final answer.
+
+- `ModelAgent` — the Harness plus a model client.
+- `CliAgent` — an external agent CLI (Claude Code, Codex) in headless mode,
+  handed the same connectors via a generated config.
+- Both satisfy one protocol, so nothing downstream knows the difference.
+- A `CliAgent` is flagged as bringing its own harness, so the report can label
+  the comparison as a product comparison rather than a controlled one.
+
+**Done when:** a scripted model and a stub CLI binary both produce a Trajectory
+through the same interface.
+
+## Step 6 — Evidence
 `src/crossbar/evidence/`
 
 Capture per the Check Plan, serialise, reload.
@@ -70,7 +86,7 @@ Capture per the Check Plan, serialise, reload.
 **Done when:** evidence captured, written, reloaded in a fresh process, and
 still complete.
 
-## Step 6 — Judging
+## Step 7 — Judging
 `src/crossbar/judging/`
 
 `Judge` with `make_plan` and `grade`, over a model client.
@@ -86,7 +102,7 @@ still complete.
 **Done when:** grading is deterministic under a scripted judge, and the blinding
 test passes.
 
-## Step 7 — Orchestrator
+## Step 8 — Orchestrator
 `src/crossbar/orchestrator/`
 
 Serial execution, roles, ordering, opt-in judging, storage layout.
@@ -95,19 +111,28 @@ Serial execution, roles, ordering, opt-in judging, storage layout.
 - Judging opt-in per Test, default first only.
 - Attempt failures contained, never raised.
 - Storage exactly as DESIGN §8.
+- **Exposes a queue model** — every planned unit with a state of pending /
+  running / done / failed — not just an event stream. The TUI renders it live.
 
 **Done when:** a full sweep runs with scripted model and judge, and ordering,
 containment and layout are each asserted.
 
-## Step 8 — Dump
+## Step 9 — Dump
 `src/crossbar/dump/`
 
 Zip the run directory. One artifact, no variants.
 
-## Step 9 — Reconnect statistics and report
+## Step 10 — Reconnect statistics and report
 
 `stats/` is unchanged; `analysis.py` and `report/` are adapted to judged results
 and the three outcomes. Unjudged Tests must be visibly unjudged.
+
+## Step 11 — TUI
+
+Connect models and assign roles; pick Tests; run; watch live. The live view
+shows which models are running, the Test and Task each is on, and the queue
+behind them. Then results, and a per-Attempt view with evidence and the judge's
+reasoning.
 
 ---
 

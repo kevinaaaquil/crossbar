@@ -169,6 +169,33 @@ limit. Records every step and call into a `Trajectory`.
 
 ---
 
+## 4b. Agents
+
+An **Agent** is anything that can execute a Task in an Environment and return a
+Trajectory plus a final answer. The Harness is one implementation of it, not the
+only path.
+
+```python
+class Agent(Protocol):
+    id: str
+    owns_harness: bool     # True for external CLIs that bring their own loop
+
+    def run(self, task: Task, connectors: Sequence[Connector]) -> Trajectory: ...
+```
+
+| Implementation | What it is |
+|---|---|
+| `ModelAgent` | Our Harness driving a model endpoint. `owns_harness = False`. |
+| `CliAgent` | An external agent CLI — Claude Code, Codex — in headless mode, handed the same connectors through a generated config. `owns_harness = True`. |
+
+Both return the same shape, so evidence capture, judging and statistics are
+unchanged downstream.
+
+**`owns_harness` must reach the report.** A CLI agent brings its own harness, so
+comparing it against a model in ours is a *product* comparison, not a controlled
+model comparison. The number is legitimate but means something different, and
+the UI has to say which kind of comparison it is showing.
+
 ## 5. Evidence
 
 Captured at the end of an Attempt, **while the Environment is still alive**,
@@ -300,6 +327,25 @@ re-run the whole flow.
 
 Failure containment: anything that goes wrong inside one Attempt becomes a
 `FAILED` record with the error attached. It never raises out of the orchestrator.
+
+### Queue model
+
+The orchestrator does not only emit progress events. It exposes the whole
+planned run as a queue the TUI can render at any moment:
+
+```python
+@dataclass
+class QueueItem:
+    test_id: str
+    task_id: str
+    model_id: str
+    role: Role
+    repeat: int
+    state: Literal["pending", "running", "done", "failed"]
+```
+
+Built in from the start. Retrofitting a queue view onto an event stream means
+reconstructing state the orchestrator already had.
 
 ---
 

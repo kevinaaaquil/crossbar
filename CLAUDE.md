@@ -354,6 +354,47 @@ and nothing exposes one" — instead of discovering it as `Unchecked` afterwards
   deterministically with no judge call? That is the deterministic pre-check
   question, and the plan is the natural place to express it.
 
+### 2026-09-19 — Agent CLIs are connectable in any role
+
+**Decided.** The user may connect an agent CLI — Claude Code, Codex, or similar
+— and assign it as Candidate, Baseline or Judge, exactly like a model endpoint.
+
+**Design consequence: an `Agent` abstraction sits above the Harness.** An Agent
+is anything that can execute a Task in an Environment and return a Trajectory
+plus a final answer. Two kinds:
+
+| Kind | What it is |
+|---|---|
+| `ModelAgent` | Our Harness driving a model endpoint. The normal case. |
+| `CliAgent` | An external agent CLI in headless mode, handed the same connectors. |
+
+Because both produce the same output shape, evidence capture, judging and
+statistics are unchanged downstream. The Harness becomes an implementation
+detail of `ModelAgent` rather than the only path.
+
+**Caveat that must stay visible, not be buried:** a `CliAgent` brings its own
+harness. Comparing a model in our Harness against Claude Code is a **product
+comparison**, not a controlled model comparison — the CLI has years of
+engineering around it. This is a legitimate thing to want to measure, but the
+report and the UI must label it, or the number quietly means something other
+than what the user thinks.
+
+For the MVP's MCP-only connector, a CLI agent is wired up by generating an MCP
+config for it, the way v0.1's Claude Code harness did. That code is on `main`
+and is a usable reference.
+
+### 2026-09-19 — The TUI shows live execution state
+
+**Decided.** The TUI must show, while a run is in progress: which models are
+running, which Test and Task each is on, and what is queued behind them.
+
+**Design consequence:** the orchestrator cannot only emit progress events. It
+must expose a **queue model** — every planned unit of work with a state of
+`pending` / `running` / `done` / `failed` — that the TUI can render at any
+moment. Build this into the orchestrator from the start; retrofitting a queue
+view onto an event stream means reconstructing state the orchestrator already
+had.
+
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
 Noncommercial use free, including charities/schools/public bodies. Commercial
