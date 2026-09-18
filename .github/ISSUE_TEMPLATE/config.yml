@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Read the walkthrough first
+    url: https://github.com/eshansingh/crossbar/blob/main/docs/WALKTHROUGH.md
+    about: A complete, plain-language guide that answers most setup questions.
+  - name: Known limitations
+    url: https://github.com/eshansingh/crossbar/blob/main/docs/LIMITATIONS.md
+    about: Check here before reporting something that is a documented non-goal.
+  - name: Commercial licensing
+    url: https://github.com/eshansingh/crossbar/blob/main/LICENSE.md
+    about: crossbar is noncommercial-use only. Open an issue to discuss a commercial licence.
