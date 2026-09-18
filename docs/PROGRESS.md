@@ -25,10 +25,10 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 7 | `judging` — Check Plan, grading, blinding | **done** | 35 |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | **done** | 32 |
 | 9 | `dump` — zip the run | **done** | 11 |
-| 10 | statistics + report reconnect | next | — |
-| 11 | TUI — connect models, run, live queue view, results | not started | — |
+| 10 | `analysis` + `report` | **done** | 48 |
+| 11 | TUI — connect models, run, live queue view, results | next | — |
 
-**Total tests:** 362
+**Total tests:** 410
 
 ---
 
@@ -171,6 +171,21 @@ an environment that will not start. None of them stop the run.
 ### Step 9 — dump — done
 One zip of the whole run directory. 11 tests, including one that dumps a real
 finished run. A previous `dump.zip` is never packed into the new one.
+
+### Step 10 — analysis and report — done
+48 tests. `stats/` was reused untouched.
+
+The important decision here: **Unchecked is not a failure.** An unchecked
+Attempt means we could not verify the result, which is a different statement
+from the model getting it wrong, so it is excluded from the score and reported
+separately. A **Failed** Attempt *is* counted as a failure — the agent erroring
+is the agent's problem. Both are tested directly.
+
+Pairing only uses Tasks both models had graded, so an Unchecked result on one
+side is never silently compared against a real score on the other.
+
+Caveats are generated, not optional: the baseline judging itself, a model with
+more than 20% unchecked attempts, and any test that ran but was not judged.
 
 ---
 
