@@ -24,11 +24,11 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 6 | `evidence` — capture, serialise, reload | **done** | 23 |
 | 7 | `judging` — Check Plan, grading, blinding | **done** | 35 |
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | **done** | 32 |
-| 9 | `dump` — zip the run | next | — |
-| 10 | statistics + report reconnect | not started | — |
+| 9 | `dump` — zip the run | **done** | 11 |
+| 10 | statistics + report reconnect | next | — |
 | 11 | TUI — connect models, run, live queue view, results | not started | — |
 
-**Total tests:** 351
+**Total tests:** 362
 
 ---
 
@@ -167,6 +167,10 @@ per unit. One test watches events mid-run and asserts exactly one item is
 
 Containment is covered three ways: a provider failure, an agent that raises, and
 an environment that will not start. None of them stop the run.
+
+### Step 9 — dump — done
+One zip of the whole run directory. 11 tests, including one that dumps a real
+finished run. A previous `dump.zip` is never packed into the new one.
 
 ---
 
