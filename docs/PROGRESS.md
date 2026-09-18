@@ -26,9 +26,9 @@ Branch: `redesign`. `main` holds v0.1 and is not touched.
 | 8 | `orchestrator` — roles, ordering, judging, storage, queue model | **done** | 32 |
 | 9 | `dump` — zip the run | **done** | 11 |
 | 10 | `analysis` + `report` | **done** | 48 |
-| 11 | TUI — connect models, run, live queue view, results | in progress (subagent) | — |
+| 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 470 (excluding the TUI, in progress)
+**Total tests:** 511
 
 ---
 
@@ -213,12 +213,48 @@ The judge used here reads the captured dump and decides from actual state, so
 the candidate that did the work passes and the baseline that only described it
 fails. That is the whole product working, minus a live model.
 
+### Step 11 — TUI — done
+Four tabs — Models, Tests, Run, Results — with `r 1 2 3 4 d q`. 48 tests.
+
+The run view renders `Orchestrator.queue` directly rather than reconstructing
+state from events; events only say when to repaint. The sweep runs on a Textual
+worker thread, and a test proves the UI stays responsive by blocking the agent
+factory on an event and asserting the running model, Test and Task are already
+painted before it is released.
+
+Added after the first pass: the judge-count control on the Tests tab. CLAUDE.md
+says the user must be *asked* how many Tests to judge when more than one is
+scheduled, and the app was defaulting silently. An unreadable value now means
+**none judged**, not all — judging everything because a field held a typo would
+spend the user's money without being asked.
+
+### Demo command — done
+`crossbar demo` runs the shipped example with two scripted stand-in models and a
+judge that decides from real captured state. Nothing is connected, so the whole
+pipeline can be watched before a model or key exists.
+
+It found a real bug: the report was taking the judge-is-baseline conflict from
+the roster's fallback rather than from the model that actually judged, so the
+demo claimed the baseline had graded its own work when a separate judge had.
+
 ---
 
 ## Discovered along the way
 
 Notes that do not belong in the design doc but should not be lost.
 
+- **The Textual markup trap is sharper than it looks.** `Static.content` returns
+  the raw string you passed in, not parsed markup, so a test asserting on
+  `.content` passes whether markup is on or off — only rendering raises. Nor are
+  all brackets dangerous: `[  0.0 - 0.0]` from the report renders fine, while a
+  bare `[/]` raises. "The report renders" is therefore not evidence that markup
+  is off. Two tests hold the line: one checks the flag on every free-text panel,
+  one drives a bracketed judgement through a real sweep.
+- **A double-run guard belongs on the message loop**, in the action, not in the
+  worker — set inside the worker it is set too late to refuse the second
+  keypress.
+- `Input.Changed` fires during compose, before the screen is on the stack, so
+  any handler that queries widgets must tolerate not finding them yet.
 - Connecting an agent CLI (Claude Code, Codex) is **nice to have, not required**
   for the MVP. The `Agent` abstraction still lands in step 5 because it is cheap
   and keeps the seam; `CliAgent` itself can be deferred.

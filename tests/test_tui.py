@@ -5,6 +5,7 @@ and scripted judge the orchestrator suite uses, so the app is exercised against
 a real run rather than a mocked one.
 """
 
+import asyncio
 import threading
 
 import pytest
@@ -535,3 +536,100 @@ class TestEntryPoint:
 
     def test_run_app_is_exported_for_the_cli(self):
         assert callable(run_app)
+
+
+class TestJudgeCountControl:
+    """CLAUDE.md: when more than one Test is scheduled, the user must be asked
+    how many to judge, because judging is the expensive part."""
+
+    def two_tests(self):
+        from tests.test_orchestrator import single_task_test
+
+        first = single_task_test()
+        second = type(first)(
+            name="Second", tasks=first.tasks, environment=first.environment,
+            repeats=1, path=first.path,
+        )
+        return [first, second]
+
+    async def test_a_control_appears_when_several_tests_are_scheduled(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.query_one("#judge-count")
+
+    async def test_it_defaults_to_judging_one_test(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.query_one("#judge-count").value == "1"
+            assert app.chosen_judge_tests() == 1
+
+    async def test_changing_it_changes_what_gets_judged(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one("#judge-count").value = "2"
+            assert app.chosen_judge_tests() == 2
+
+    async def test_a_nonsense_value_falls_back_to_none_judged(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one("#judge-count").value = "banana"
+            assert app.chosen_judge_tests() == 0
+
+    async def test_the_cost_warning_is_shown(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            body = str(app.query_one("#tests-body").content).lower()
+            assert "judg" in body and ("cost" in body or "expensive" in body)
+
+    async def test_the_choice_reaches_the_orchestrator(self, tmp_path):
+        from tests.test_orchestrator import ROSTER, judge, solving_agent
+        from crossbar.tui import CrossbarApp
+
+        app = CrossbarApp(
+            roster=ROSTER, tests=self.two_tests(), results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one("#judge-count").value = "2"
+            await pilot.press("r")
+            while not app.sweep_done:
+                await pilot.pause()
+                await asyncio.sleep(0.05)
+            judged = {a.test_name for a in app.result.attempts if a.judgement is not None}
+            assert judged == {"Support triage", "Second"}

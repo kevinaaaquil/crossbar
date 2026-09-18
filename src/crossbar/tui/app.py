@@ -21,6 +21,8 @@ from typing import Any, Callable, Sequence
 
 from textual import work
 from textual.app import App, ComposeResult
+from textual.app import ScreenStackError
+from textual.css.query import NoMatches
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
@@ -31,6 +33,8 @@ from textual.widgets import (
     ProgressBar,
     Static,
     TabbedContent,
+    Input,
+    Label,
     TabPane,
 )
 
@@ -68,6 +72,10 @@ class CrossbarApp(App):
     #results-report-scroll { height: 50%; }
     #results-browser { height: 1fr; border-top: solid $panel; }
     #results-list { width: 46; border-right: solid $panel; }
+    #judge-controls { height: 3; padding: 0 1; }
+    #judge-controls Label { padding: 1 1 0 0; }
+    #judge-count { width: 8; }
+    #judge-count-total { width: auto; }
     .pane-body { height: auto; }
     """
 
@@ -120,8 +128,20 @@ class CrossbarApp(App):
                 with VerticalScroll():
                     yield Static(id="models-body", markup=False, classes="pane-body")
             with TabPane("2 Tests", id="tests"):
-                with VerticalScroll():
-                    yield Static(id="tests-body", markup=False, classes="pane-body")
+                with Vertical():
+                    # Judging is the expensive part of a run, so when more than
+                    # one Test is scheduled the user is asked rather than
+                    # having the whole lot judged by default.
+                    with Horizontal(id="judge-controls"):
+                        yield Label("Tests to judge")
+                        yield Input(
+                            value=str(self.judge_tests),
+                            id="judge-count",
+                            classes="narrow",
+                        )
+                        yield Label(f"of {len(self.tests)}", id="judge-count-total")
+                    with VerticalScroll():
+                        yield Static(id="tests-body", markup=False, classes="pane-body")
             with TabPane("3 Run", id="run"):
                 with Vertical():
                     yield Static(id="run-current", markup=False)
@@ -143,9 +163,34 @@ class CrossbarApp(App):
     def on_mount(self) -> None:
         self._set("#models-body", render_roster(self.roster))
         self._set("#tests-body", render_tests(self.tests, self.judge_tests))
+        if len(self.tests) < 2:
+            self.query_one("#judge-controls").display = False
         self._set("#results-report", "Nothing has been run yet. Press r to start a sweep.")
         self._set("#results-detail", render_attempt(None))
         self._refresh_run_view()
+
+    def chosen_judge_tests(self) -> int:
+        """How many Tests the user has asked to judge.
+
+        Anything unreadable means none: silently judging everything because a
+        field held a typo would spend the user's money without being asked.
+        """
+        try:
+            raw = self.query_one("#judge-count", Input).value
+        except (NoMatches, ScreenStackError):
+            # Asked before the widget exists: Input.Changed fires during
+            # compose. Fall back to what the app was constructed with.
+            return self.judge_tests
+        try:
+            count = int(str(raw).strip())
+        except ValueError:
+            return 0
+        return max(0, min(count, len(self.tests)))
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "judge-count" or not self.is_mounted:
+            return
+        self._set("#tests-body", render_tests(self.tests, self.chosen_judge_tests()))
 
     # -- actions -----------------------------------------------------------
 
@@ -278,7 +323,7 @@ class CrossbarApp(App):
             judge=self.judge,
             agent_factory=self.agent_factory,
             on_event=self._on_run_event,
-            judge_tests=self.judge_tests,
+            judge_tests=self.chosen_judge_tests(),
         )
 
 
