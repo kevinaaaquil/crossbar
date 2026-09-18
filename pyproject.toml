@@ -30,7 +30,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-timeout"]
+# pytest-asyncio is required: the Textual UI tests are async, and without
+# it pytest cannot run them at all.
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [project.urls]
 Homepage = "https://github.com/kevinaaaquil/crossbar"
