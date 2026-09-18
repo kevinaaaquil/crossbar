@@ -42,10 +42,10 @@ currently uses a different word, the rename is listed in
 | **Attempt** | One execution of one Task by one model in a fresh Environment. Repeating a Test produces multiple Attempts per Task. |
 | **Connector** | A toggleable capability granted to the agent for touching the Environment (MCP, browser, HTTP, shell, files). MVP ships MCP only. |
 | **Harness** | Ours. The runtime that drives a model through a Task using the enabled Connectors. Fixed, not a variable, and invisible to the user. |
-| **Candidate** | The model being evaluated — typically the user's local or fine-tuned model. |
-| **Baseline** | The model it is compared against — typically a frontier model. |
+| **Candidate** | A user-assigned role label. Its Attempts run first for a given Test. Typically the user's local or fine-tuned model, but the label carries no other meaning. |
+| **Baseline** | A user-assigned role label. Its Attempts run second for a given Test. Typically a frontier model. Also the Judge fallback when no Judge is assigned. |
 | **Judge** | A model used to analyse results against the Golden. Optional; falls back to the Baseline. Always blinded to whose attempts it is grading. |
-| **Dump** | A self-contained export of a Task, its Golden, an Attempt's artifacts, trace and judge reasoning, for review by the user or their own AI. |
+| **Dump** | A full zipped export of everything a run produced. For the user's own inspection or review by their own AI. We never need it to score: the Task tells us what to check. |
 | **Golden** | The known correct result for a Task, supplied by the user. |
 
 ### Planned renames
@@ -86,6 +86,7 @@ currently uses a different word, the rename is listed in
                    plus a Dump the user can review with their own AI
 
 7. ORCHESTRATION   one container, one Task at a time (for now)
+                   order: per Test, Candidate then Baseline
                    repeats, isolation, failure containment
 
 8. STATISTICS      intervals, paired comparison, verdict
@@ -196,9 +197,58 @@ biased; default to reference-based.
   grade the same artifact twice at temperature 0 and see whether the verdict
   holds.
 
-**Edge case:** if there is neither a Judge nor a Baseline (a single model run on
-its own), there is nothing to judge with. Either require one, or fall back to
-deterministic checks only, or emit the dump and no score.
+**Edge case resolved:** a run requires at least a Candidate and a Baseline, so
+there is always a model available to judge with.
+
+### 2026-09-19 — Model roles are labels; execution order and judging budget
+
+**Minimum two model connections.** At least one Candidate and one Baseline. The
+user may connect as many models as they like and assign roles in the UI.
+
+**Roles are naming conventions, not behaviour.** Candidate, Baseline and Judge
+are user-assigned labels. They do not change how a Task is executed. They have
+exactly two mechanical consequences:
+
+1. **Order.** For a given Test, the Candidate's Attempts run first, then the
+   Baseline's.
+2. **Judge fallback.** If no Judge is assigned, the Baseline is used to judge
+   (blinded — see the judging decision above).
+
+**Execution order is Test-major, then role:**
+
+```
+Test 1 -> Candidate
+Test 1 -> Baseline
+Test 2 -> Candidate
+Test 2 -> Baseline
+...
+```
+
+Not "all Candidate Tests, then all Baseline Tests". This means complete paired
+data exists for each Test before the next one starts, so an aborted or
+interrupted run still yields a valid comparison for the Tests that finished,
+rather than one side of everything.
+
+**Judging is opt-in per Test, and defaults to the first Test only.** When more
+than one Test is scheduled, warn the user and ask how many to judge. Default:
+the first. **Judging is the expensive part of an eval bill**, and the default
+must not quietly spend the user's money.
+
+**Consequence to surface in the UI:** an unjudged Test produces no score, so no
+statistics and no verdict for it. Whatever the report says about the run must be
+explicit about which Tests were judged and which were only executed.
+
+### 2026-09-19 — The Dump is a full zip, and is not part of scoring
+
+**Decided:** the Dump is a complete zipped export of a run — Tasks, Goldens,
+artifacts, traces, judge reasoning, everything. It exists for the user who wants
+to dig, or wants to hand the whole thing to their own AI.
+
+It is **not** an input to our scoring. We define the Task, so we know what to
+check; the Dump is an output for the user, not a mechanism we depend on.
+
+This closes the earlier open question about Dump format and granularity: one
+full zip, no per-Attempt or failures-only variants to design.
 
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
@@ -220,14 +270,14 @@ Unresolved. Do not guess; ask.
    it differ per Task type?
 3. **Deterministic pre-checks.** Whether machine-checkable assertions (state
    diffs, schema validation) run before the judge as a cheaper first tier, or
-   whether judging is the only mechanism.
+   whether judging is the only mechanism. Now bears directly on the judging
+   budget: anything settled deterministically is a judge call not paid for.
 4. **Connector set: fixed per Task or user-varied?** (see decision above)
 5. **Browser sequencing.** Backend-only containers first with browser second, or
    is a UI-driving Task the motivating case that must be in the MVP?
-6. **Dump format and granularity.** Markdown for pasting into a chat, JSON for
-   machines, or both? Per Attempt, per Task, per Test, or failures-only? A whole
-   Test at 20 Tasks x 5 repeats is 100 Attempts, far too much to paste into
-   anything, so granularity is a real design decision rather than a detail.
+6. **What happens to an unjudged Test's results?** They are executed and land in
+   the Dump, but carry no score. Are they simply held unjudged until the user
+   asks, or discarded, or scored later on demand?
 
 ---
 
