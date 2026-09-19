@@ -286,6 +286,8 @@ judge's prompts have not been tuned against a live model.
 
 | File | For |
 |---|---|
+| [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) | Complete beginner's guide. Start here. |
+| [`docs/TASK-AUTHORING.md`](docs/TASK-AUTHORING.md) | Writing your own Tests and Tasks |
 | [`CLAUDE.md`](CLAUDE.md) | Terminology, every design decision and why |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | The concrete shapes |
 | [`docs/PROGRESS.md`](docs/PROGRESS.md) | What is built, what is next |

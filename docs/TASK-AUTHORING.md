@@ -1,265 +1,226 @@
-# Writing a task pack
+# Writing Tests and Tasks
 
-A task pack is a folder of YAML files. Each `*.task.yaml` file is one task; an
-optional `pack.yaml` names the pack. That is the whole format.
+A **Test** is a directory. Everything about it is three kinds of YAML file.
 
 ```
-my-pack/
-  pack.yaml                    # optional: name, description
-  01-first.task.yaml
+my-test/
+  test.yaml               name, repeats, which environment
+  env.yaml                what the agent is allowed to touch
+  01-first.task.yaml      the work, and what a correct result means
   02-second.task.yaml
 ```
 
-Run it with `crossbar run --pack my-pack`.
+Run it with `crossbar run --test my-test`.
 
 ---
 
-## The four admission criteria
+## The whole format
 
-Before writing a task, check it against these. They are stolen verbatim from
-Harness-Bench, and the fourth is the one people skip.
-
-| Criterion | Question |
-|---|---|
-| **Realism** | Is this a plausible piece of work someone actually does? |
-| **Solvability** | Can it be completed with only the tools provided? |
-| **Oracle-checkability** | Can a machine verify success with no opinions? |
-| **Integrity** | Can the agent get credit *without* doing the work? |
-
-Integrity is the one that silently invalidates a whole suite. If the answer is
-sitting in the environment, or a check can be satisfied by saying the right
-words, the task measures nothing and you will not notice for weeks.
-
----
-
-## A complete task file
+### `test.yaml`
 
 ```yaml
-id: escalate-outage             # required, unique within the pack
-name: Escalate the outage tickets
-category: mcp-workflow
-timeout_s: 120                  # wall-clock ceiling for one attempt
-max_steps: 12                   # model turns before the run is cut off
-budget_tokens: 60000            # token ceiling for one attempt
-
-prompt: |
-  You are triaging a support queue through the `tickets` MCP server.
-
-  Every open ticket that mentions an outage must be escalated: set its
-  priority to "urgent". Leave every other ticket's priority alone.
-
-  When you are done, reply with the ticket ids you escalated.
-
-environment:
-  kind: local                   # local | docker
-  servers:
-    - name: tickets
-      command: ${CROSSBAR_PYTHON}
-      args: ["-m", "crossbar.demo.tickets_server"]
-      env: {}                   # extra environment variables, optional
-      cwd: null                 # working directory, optional
-
-security:
-  forbidden_tools: ["tickets.delete_all"]
-  max_tool_calls: 30
-
-checks:
-  - type: mcp_state
-    description: T-1001 is urgent
-    server: tickets
-    tool: get_ticket
-    args: {id: "T-1001"}
-    expect: {ticket: {priority: "urgent"}}
-    match: subset
-    weight: 1.0
-
-demo:                           # optional, for the built-in mock model only
-  script:
-    - tool: tickets__set_priority
-      args: {id: "T-1001", priority: "urgent"}
-  final: Escalated T-1001.
+name: Support triage
+description: Support-desk workflows over a ticketing backend.
+repeats: 3                  # how many times each Task is attempted per model
+environment: env.yaml
 ```
 
-Defaults if you omit them: `timeout_s: 120`, `max_steps: 20`,
-`budget_tokens: 100000`, `category: mcp-workflow`, no security restrictions.
+`repeats` is what lets you tell *consistently mediocre* apart from *wildly
+inconsistent*. Both can average 50%, and they mean different things. Three is a
+sensible floor; five or more settles down.
 
----
-
-## Environments
-
-### `kind: local`
-
-Servers run as ordinary subprocesses on your machine. Fast, no daemon, correct
-choice while authoring. **No isolation** — do not use it for anything untrusted.
-
-### `kind: docker`
+### `env.yaml`
 
 ```yaml
-environment:
-  kind: docker
-  image: python:3.12-slim
-  servers:
-    - name: tickets
-      command: python
-      args: ["-m", "my_server"]
+kind: local                 # local | docker
+connectors:
+  mcp:
+    servers:
+      - name: tickets
+        command: ${CROSSBAR_PYTHON}
+        args: ["-m", "crossbar.demo.tickets_server"]
+        env: {}             # optional
+        cwd: null           # optional
 ```
 
-One throwaway container per attempt, network disabled, removed on teardown. The
-image must already contain your server and its dependencies.
+`kind: local` runs the servers as subprocesses on this machine. Fast, needs no
+daemon, right for authoring. **No isolation** — do not point it at a Test you
+did not write.
 
-### Variable expansion
+`kind: docker` gives each Attempt a throwaway container:
 
-`${VAR}` in `command`, `args`, `env` and `cwd` is expanded from the environment
-at launch. Two are always defined:
+```yaml
+kind: docker
+image: your-image:latest
+reset: recreate             # the only policy: destroyed and rebuilt each Attempt
+connectors:
+  mcp:
+    servers:
+      - name: orders
+        command: python
+        args: ["-m", "order_server"]
+```
+
+The image must already contain your server and its dependencies.
+
+**Variable expansion.** `${VAR}` works in `command`, `args`, `env` and `cwd`.
+Two are always defined:
 
 | Variable | Is |
 |---|---|
 | `${CROSSBAR_PYTHON}` | the interpreter running crossbar — use it for Python servers |
-| `${CROSSBAR_WORKSPACE}` | a scratch directory unique to this attempt |
+| `${CROSSBAR_WORKSPACE}` | a scratch directory unique to this Attempt |
 
-Unknown variables are left as-is rather than blanked, so a typo is visible
-instead of silent.
+An unknown name is left as-is rather than blanked, so a typo is visible.
 
-### Why the workspace matters
+### `*.task.yaml`
 
-Every attempt gets a fresh `${CROSSBAR_WORKSPACE}`, and every server is told
-where it is. **If your server keeps state only in memory, `mcp_state` checks
-cannot work with CLI-driven harnesses** like Claude Code, because that harness
-launches its own copy of the server and the scorer connects separately.
+```yaml
+id: escalate-outage         # required, unique within the Test
+name: Escalate the outage tickets
 
-Write state to the workspace and everything works everywhere:
+prompt: |
+  Every open ticket that mentions an outage must be escalated to urgent
+  priority. Leave every other ticket's priority alone. Reply with the ticket
+  ids you escalated.
+
+golden: |
+  Tickets T-1001 and T-1004 both have priority "urgent", because both mention
+  an outage. No other ticket's priority changed: T-1002 is still "normal".
+
+limits:                     # all optional
+  timeout_s: 120
+  max_steps: 12
+  max_tokens: 60000
+
+environment: other-env.yaml  # optional, overrides the Test's default
+```
+
+That is the entire schema. There is no `checks:` block, no assertion syntax, no
+verifier to write.
+
+---
+
+## The Golden is prose
+
+**Say what a correct result means. Do not describe how to check it.**
+
+```yaml
+golden: |
+  Orders 4471 and 4488 each have one refund recorded against them, for the
+  duplicate charge only. No other order has a refund. Order 4490 was charged
+  twice but is already disputed, so it was left alone.
+```
+
+Before any Attempt runs, the judge reads the Task and this Golden alongside the
+list of read-only tools your environment offers, and derives a **Check Plan** —
+what must be true, and which tools would show it. That plan is stored, shown to
+you, and applied identically to every Attempt.
+
+Deriving it before any model output exists is deliberate: the criteria are fixed
+before anyone has seen an answer, so they cannot be bent towards it.
+
+### Write goldens that can actually be checked
+
+The judge can only ask for evidence something can supply. If your golden talks
+about the database, something must be able to read the database back. If
+nothing can, the result is **Unchecked** — no score, with that as the reason.
+
+`crossbar validate` tells you this before you spend anything: it starts each
+environment and warns when nothing read-only exists to check against.
+
+### Be specific about what must *not* change
+
+```yaml
+# Weak: an agent that sets every ticket to urgent passes.
+golden: |
+  T-1001 and T-1004 are urgent.
+
+# Better: the negative case is stated, so over-eager work fails.
+golden: |
+  T-1001 and T-1004 are urgent. No other ticket's priority changed —
+  T-1002 is still "normal" and T-1005 is still "low".
+```
+
+---
+
+## Read-only tools, and why they matter
+
+Evidence capture must not change the thing it is measuring, so crossbar only
+calls tools it can **establish** are read-only. In order:
+
+1. **The server's own annotation.** An MCP tool advertising `readOnlyHint: true`
+   is trusted.
+2. **An explicit declaration** in `env.yaml`, for servers that do not annotate:
+
+   ```yaml
+   connectors:
+     mcp:
+       servers: [...]
+       read_only_tools: ["tickets__list_tickets", "tickets__dump_db"]
+   ```
+3. **Otherwise it is not a probe.** Nothing is inferred from a tool's name — a
+   tool called `get_everything` could still delete your data.
+
+If your server has no read-only tools at all, **every Attempt will come back
+Unchecked.** Adding one that dumps the relevant state is usually the single
+highest-value change you can make to a Test.
+
+### State must outlive the agent
+
+Judging can be deferred and re-run long after the container is gone, so evidence
+is captured while the environment is alive and written to disk. If your server
+keeps state only in memory, write it to `${CROSSBAR_WORKSPACE}` too:
 
 ```python
 path = os.path.join(os.environ["CROSSBAR_WORKSPACE"], "state.json")
 ```
 
-See `src/crossbar/demo/tickets_server.py` for a complete, small example.
+`src/crossbar/demo/tickets_server.py` is a complete, small example.
 
 ---
 
-## Checks
+## Three rules for a Task worth trusting
 
-Checks are the golden answer. All of them are deterministic — no LLM judge.
+**1. Solvable with the tools provided.** If the agent cannot reach what it
+needs, you are measuring your setup, not the model.
 
-### `mcp_state` — the state of the world afterwards
+**2. Checkable from what the environment can show.** Otherwise every result is
+Unchecked, which is a setup problem wearing the costume of a result.
 
-The strongest check. After the attempt, crossbar calls a tool and compares the
-result with what you expected.
-
-```yaml
-- type: mcp_state
-  server: tickets
-  tool: get_ticket
-  args: {id: "T-1002"}
-  expect: {ticket: {assignee: "alice", tags: ["billing"]}}
-  match: subset
-```
-
-### `tool_called` — what the agent did
-
-```yaml
-- type: tool_called
-  server: tickets
-  tool: list_tickets
-  min_times: 1
-  max_times: 3
-```
-
-Useful for "it must read before it writes", and for catching brute force.
-
-### `final_text` — what the agent said
-
-```yaml
-- type: final_text
-  match: regex          # contains | regex | exact
-  value: "2|two"
-```
-
-Use sparingly. It checks a claim, not a fact. An agent that does nothing and
-reports success passes this check.
-
-### `no_tool_errors`
-
-```yaml
-- type: no_tool_errors
-```
-
-Passes only when no tool call returned an error.
-
-### Match modes
-
-| Mode | Behaviour |
-|---|---|
-| `subset` (default) | Everything you specified is present; extra fields are fine |
-| `exact` | Deep equality; nothing extra allowed |
-| `contains` | Substring, case-insensitive; searches inside lists |
-| `regex` | Regular expression against the value as text |
-
-`subset` is the default because a golden answer should pin down what must be
-true, not forbid every incidental field a server happens to return.
-
-### Weights
-
-```yaml
-- type: mcp_state
-  weight: 3.0     # this check is worth three of the others
-```
-
-Completion is the weighted fraction of checks passed.
-
----
-
-## Security
-
-```yaml
-security:
-  forbidden_tools: ["tickets.delete_all", "tickets.*"]
-  max_tool_calls: 30
-```
-
-A forbidden tool is **blocked before it executes**; the agent gets an error back
-and the attempt records a violation. A violation sets the security term to zero,
-and because scoring is multiplicative, the whole task scores **zero** regardless
-of how well everything else went.
-
-For the Claude Code harness, forbidden tools are additionally left out of the
-`--allowedTools` list, so the CLI never offers them.
-
----
-
-## The demo block
-
-Optional, and only ever read by the built-in mock model:
-
-```yaml
-demo:
-  script:
-    - tool: tickets__list_tickets
-      args: {}
-      thought: Reading the queue first.
-    - tool: tickets__set_priority
-      args: {id: "T-1001", priority: "urgent"}
-  final: Escalated 1 ticket.
-```
-
-Tool names here use the flat `server__tool` form. Real models never see this
-block. It exists so a new task pack can be exercised end to end — and its checks
-proven correct — before anyone spends a cent on inference.
-
-**Write the demo script first, run the pack against `mock-strong`, and confirm
-it scores 100%.** If it does not, your checks are wrong, not the model.
+**3. Not passable without doing the work.** This is the one people skip, and it
+silently invalidates a whole Test. If saying the right words would satisfy the
+Golden, the Task measures nothing. Agents are very good at describing work
+convincingly and then not doing it — there is a whole failure mode for it.
 
 ---
 
 ## A workable process
 
-1. Write one task with one `mcp_state` check.
-2. Add a `demo` block that solves it.
-3. `crossbar validate --pack my-pack` — catches typos and unknown servers.
-4. `crossbar run --pack my-pack --agent mock-strong+react --repeats 1`.
-5. It should score 1.00. If not, fix the check.
-6. Now break the demo script deliberately. It should score 0.00.
-7. Only then write the next task.
+1. Write one Task with a prose Golden.
+2. `crossbar validate --test my-test` — catches typos, confirms the environment
+   starts, warns if nothing can be read back.
+3. `crossbar run --test my-test --repeats 1`.
+4. Read the **Check Plan** in `runs/<id>/plans/`. Does it actually describe what
+   you meant? If not, the Golden was ambiguous — fix the prose, not the plan.
+5. Read one Attempt's `evidence.json` and `judgement.json`. Did the judge look
+   at the right things, and did its reasoning hold up?
+6. **Now break it on purpose.** Point the Task at a model you expect to fail, or
+   loosen the prompt, and confirm it scores zero. A check that passes no matter
+   what is the failure mode that costs you weeks.
+7. Only then write the next Task.
 
-Step 6 is the one people skip, and it is the one that catches a check which
-passes no matter what the agent does.
+Step 6 is the one people skip.
+
+---
+
+## What the outcomes mean
+
+| Outcome | Means | What to do |
+|---|---|---|
+| **Graded** | The evidence was there. There is a score. | Read it. |
+| **Unchecked** | The evidence was not available. **No score**, and a reason. | Fix your environment, then `crossbar judge <run>` — no need to re-run. |
+| **Failed** | The Attempt itself errored. Counted as a failure. | Check the trajectory; usually an unreachable model or a limit hit. |
+
+Any single unchecked check leaves the whole Attempt unscored. A Golden is one
+statement, and verifying half of it does not establish that the Task was done.
