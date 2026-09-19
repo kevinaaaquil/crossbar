@@ -419,6 +419,7 @@ rediscovered as surprises, each with the trigger that should bring it back.
 | 2 | **Can the user edit a Check Plan?** Showing it to them implies they can correct one the judge got wrong. | A user hits a plan that is wrong and has no way to fix it |
 | 3 | **Connector set: fixed per Task, or user-varied?** Fixed keeps the comparison controlled; varying it answers a different question ("does my model need browser access for this?"). Moot while MCP is the only connector. | A second connector exists |
 | 4 | **Browser connector.** Backend-only containers first, browser second — or is a UI-driving Task the motivating case? | Backend-only MCP works end to end |
+| 4b | **Agent CLIs as models** — Claude Code, Codex, Cursor. The `Agent` seam exists; nothing is wired to it. See [the note below](#agent-clis-as-models) for what it actually takes. | Someone wants to compare against a shipped agent rather than a model |
 | 5 | **Re-judge verdict conflicts.** If a Test is re-judged and the verdict differs from the first pass, which one counts? | Re-judging is actually implemented |
 | 6 | **Parallel execution.** Multiple containers at once. The orchestrator keeps the seam; it is defaulted to serial. | Serial throughput becomes the bottleneck |
 | 7 | **Judge self-agreement measurement.** Grade the same evidence twice at temperature 0 and report how often the verdict holds. | Before anyone makes a real decision on these numbers |
@@ -426,6 +427,45 @@ rediscovered as surprises, each with the trigger that should bring it back.
 
 Items 7 and 8 are not nice-to-haves. The product's claim is statistical honesty,
 and an unmeasured judge quietly undermines it.
+
+### Agent CLIs as models
+
+Assessed 2026-09-19. **Not possible today**, and worth writing down why, because
+the blocking piece is not the obvious one.
+
+Three pieces of work:
+
+1. **A `CliAgent`.** Generate an MCP config from the Task's connector specs, run
+   the CLI headless, parse its output into a `Trajectory`. v0.1 had a working
+   Claude Code adapter on `main` — `claude -p --output-format stream-json
+   --verbose --mcp-config --strict-mcp-config --allowedTools` — which is a
+   direct reference. Codex and Cursor both have headless modes and MCP support,
+   but their flags and output shapes need checking rather than recalling.
+2. **A `cli` provider kind in the roster.** `PROVIDER_KINDS` is `("openai",
+   "anthropic")`, so a CLI cannot be declared in `roster.yaml` and neither the
+   CLI nor the TUI can express one.
+3. **Reconnect before capture — this is the trap.** Our Connectors hold live MCP
+   server subprocesses. A CLI agent cannot use them; it spawns **its own**
+   copies from its own config. So once the CLI exits, our Connectors are holding
+   stale in-process state, and `capture()` would read that instead of what the
+   agent actually did. The orchestrator must tear the Connectors down and
+   rebuild them against the same `CROSSBAR_WORKSPACE` **after** the run and
+   **before** capture, whenever `agent.owns_harness` is true.
+
+   Without this it does not fail loudly — it silently reports the seed state for
+   every CLI Attempt, which is the kind of bug that produces confident wrong
+   numbers. Whatever implements it needs a test that fails without it.
+
+`owns_harness` is on the `Agent` protocol for exactly this and is currently read
+by nobody. It must also reach the report: comparing a CLI that brings its own
+harness against a model driven by ours is a **product** comparison, not a
+controlled model comparison. Legitimate to want, but a different measurement,
+and it has to be labelled or the number means something other than the reader
+assumes.
+
+Build order when it comes up: Claude Code first, since the reference exists,
+plus the reconnect path — those two together prove the whole thing. Then a
+second CLI to check the adapter shape generalises.
 
 ---
 

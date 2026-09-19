@@ -40,8 +40,11 @@ Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
 
 - A second connector (browser, HTTP, shell). MCP is the only one.
 - Parallel execution. One container, one Task at a time.
-- `CliAgent` — connecting Claude Code or Codex as a model. The `Agent` seam is
-  in place; the implementation is not.
+- `CliAgent` — connecting Claude Code, Codex or Cursor as a model. The `Agent`
+  seam is in place; the implementation is not. CLAUDE.md records what it takes,
+  including the non-obvious part: Connectors must be rebuilt against the same
+  workspace before capture, or evidence reads stale state and reports confident
+  wrong numbers.
 - Plan editing, machine-checkable plan items, judge self-agreement measurement.
 
 ### Known unknowns
