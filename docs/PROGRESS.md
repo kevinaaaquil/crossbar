@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 619
+**Total tests:** 649
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -251,6 +251,23 @@ says the user must be *asked* how many Tests to judge when more than one is
 scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
+
+### Packaging and the project folder — done
+crossbar is installed, not cloned. 27 tests.
+
+The example Test moved inside the package and is declared as package data — at
+the repository root it did not ship in the wheel at all, and `crossbar demo`
+from an installed copy failed on a path that walked up out of `site-packages`.
+It now resolves through `importlib.resources`.
+
+Configuration lives in `.crossbar/config.yaml`, found by walking up from the
+working directory. `crossbar init` scaffolds it. Results default to
+`.crossbar/runs`.
+
+Verified the only way that means anything: a wheel built, installed into a
+clean virtualenv, and driven from an unrelated directory — demo, init, and
+validate from a subdirectory, with the MCP server launching out of the installed
+package.
 
 ### Mode toggle — done
 `m` in the TUI switches between assessing one model and comparing two, without

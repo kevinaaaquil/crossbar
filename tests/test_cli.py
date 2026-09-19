@@ -296,3 +296,82 @@ class TestPreflightOnRun:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         _, out = cli(["doctor", "--roster", roster_file], capsys)
         assert "ANTHROPIC_API_KEY" in out
+
+
+class TestProjectFolderCommands:
+    """An installed binary finds its setup in .crossbar, not from flags."""
+
+    def test_init_scaffolds_a_project(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        code, out = cli(["init"], capsys)
+        assert code == 0
+        assert (tmp_path / ".crossbar" / "config.yaml").exists()
+        assert "crossbar" in out
+
+    def test_init_says_what_to_do_next(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        _, out = cli(["init"], capsys)
+        assert "edit" in out.lower()
+        assert "validate" in out or "run" in out
+
+    def test_init_refuses_to_overwrite(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        code, out = cli(["init"], capsys)
+        assert code != 0
+        assert "exists" in out.lower()
+
+    def test_validate_uses_the_project_when_no_flags_are_given(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        code, out = cli(["validate"], capsys)
+        assert "Support triage" in out
+
+    def test_commands_work_from_a_subdirectory(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        nested = tmp_path / "deep" / "inside"
+        nested.mkdir(parents=True)
+        monkeypatch.chdir(nested)
+        capsys.readouterr()
+        _, out = cli(["validate"], capsys)
+        assert "Support triage" in out
+
+    def test_a_missing_project_says_how_to_make_one(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        code, out = cli(["validate"], capsys)
+        assert code != 0
+        assert "crossbar init" in out
+
+    def test_a_fresh_project_fails_preflight_on_placeholder_endpoints(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        """It must not look like a working setup that quietly does nothing."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        code, out = cli(["validate"], capsys)
+        assert code != 0
+        assert "FAIL" in out.upper()
+
+    def test_explicit_flags_still_win_over_the_project(
+        self, capsys, tmp_path, roster_file, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        code, out = cli(["validate", "--roster", roster_file, "--test", FIXTURE_TEST], capsys)
+        assert "frontier" in out
+
+    def test_results_default_into_the_project_folder(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("LOCAL_API_KEY", "x")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+        cli(["init"], capsys)
+        capsys.readouterr()
+        cli(["run", "--repeats", "1", "--no-judge", "--skip-preflight"], capsys)
+        assert (tmp_path / ".crossbar" / "runs" / "run.json").exists()

@@ -12,6 +12,7 @@ scripts, and the report says so.
 from __future__ import annotations
 
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,16 @@ from crossbar.orchestrator import Orchestrator, RunResult
 from crossbar.providers import ScriptedProvider, Usage, scripted_step
 from crossbar.roster import parse_roster
 
-EXAMPLE = Path(__file__).resolve().parent.parent.parent.parent / "examples" / "support-triage"
+def example_test_path() -> Path:
+    """Where the bundled example Test lives.
+
+    Resolved through the package rather than by walking up from ``__file__``:
+    installed from a wheel there is no repository root to walk up to.
+    """
+    return Path(str(resources.files("crossbar") / "examples" / "support-triage"))
+
+
+EXAMPLE = example_test_path()
 
 ROSTER = parse_roster(
     {

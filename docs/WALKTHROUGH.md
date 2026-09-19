@@ -66,23 +66,19 @@ You want **3.11 or higher**. If you see an error or an older version, install
 from [python.org/downloads](https://www.python.org/downloads/), then close and
 reopen the terminal.
 
-### Step 1.3 — Go to the crossbar folder and install
+### Step 1.3 — Install it
 
 ```bash
-cd ~/dev/crossbar
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+pip install crossbar
 ```
 
-`cd` means change directory. The first command creates a private workspace so
-crossbar cannot interfere with anything else; the second installs it there.
-
-> **Windows:** use `.venv\Scripts\...` instead of `.venv/bin/...` everywhere.
+That is the whole installation. `crossbar` is now a command you can run from
+anywhere.
 
 ### Step 1.4 — Check it worked
 
 ```bash
-.venv/bin/crossbar doctor
+crossbar doctor
 ```
 
 ```
@@ -100,7 +96,7 @@ Docker is optional. If the Python line looks right, you are set up.
 ## Part 2: See it work before connecting anything
 
 ```bash
-.venv/bin/crossbar demo
+crossbar demo
 ```
 
 No account, no key, no internet. Two scripted stand-in models run four
@@ -148,7 +144,7 @@ Honesty about the limits of the experiment. Four tasks is a demo.
 ### Where it all went
 
 ```
-runs/demo/
+.crossbar/runs/
   run.json                  every attempt, machine-readable
   report.md                 the report, shareable
   plans/<task>.json         what the judge decided to check
@@ -163,9 +159,29 @@ it.
 
 ---
 
-## Part 3: Connect your own models
+## Part 3: Set up your project
 
-Open `roster.yaml` in any text editor.
+Go to the folder you want to work in and run:
+
+```bash
+crossbar init
+```
+
+That creates a `.crossbar` folder:
+
+```
+your-project/
+  .crossbar/
+    config.yaml              your models and which Tests to run
+    tests/support-triage/    the bundled example, yours to replace
+    runs/                    results land here
+```
+
+Every crossbar command looks for `.crossbar`, walking up from wherever you are —
+the same way `git` finds `.git`. So you can be several folders deep and it still
+works.
+
+Now open `.crossbar/config.yaml` in any text editor.
 
 ### If your model runs on your own machine or server
 
@@ -248,24 +264,24 @@ evidence.
 The demo is about a support desk. Yours will be about your work. Short version
 here; the full reference is [TASK-AUTHORING.md](TASK-AUTHORING.md).
 
-A test is a folder with three kinds of file:
+A test is a folder inside `.crossbar/tests/` with three kinds of file:
 
 ```
-my-test/
+.crossbar/tests/my-test/
   test.yaml            name, how many attempts per task
   env.yaml             what the agent can touch
   01-first.task.yaml   the work, and what correct means
 ```
 
 ```yaml
-# my-test/test.yaml
+# .crossbar/tests/my-test/test.yaml
 name: Refund checks
 repeats: 3               # each task attempted three times
 environment: env.yaml
 ```
 
 ```yaml
-# my-test/env.yaml
+# .crossbar/tests/my-test/env.yaml
 kind: local
 connectors:
   mcp:
@@ -276,7 +292,7 @@ connectors:
 ```
 
 ```yaml
-# my-test/01-first.task.yaml
+# .crossbar/tests/my-test/01-first.task.yaml
 id: refund-duplicates
 prompt: |
   Find every order charged twice this month and refund the duplicate
@@ -315,7 +331,7 @@ apart. Three is a floor; five or more settles down.
 ## Part 5: Check, then run
 
 ```bash
-.venv/bin/crossbar validate --test my-test
+crossbar validate
 ```
 
 This prints the roles, every task, how many attempts would run, and a
@@ -341,7 +357,7 @@ forget. **Failures stop it with nothing spent.** Warnings are your call.
 Then:
 
 ```bash
-.venv/bin/crossbar run --test my-test
+crossbar run
 ```
 
 ---
@@ -349,7 +365,7 @@ Then:
 ## Part 6: The interactive app
 
 ```bash
-.venv/bin/crossbar tui --test my-test
+crossbar tui
 ```
 
 Four tabs:
@@ -383,12 +399,13 @@ Every score traces back to what was actually inspected. Nothing is a black box.
 
 | What you see | What it means |
 |---|---|
-| `command not found: crossbar` | Missing the `.venv/bin/` prefix, or wrong folder. `cd ~/dev/crossbar` first. |
+| `command not found: crossbar` | The install did not finish, or it went into a different Python. Try `python3 -m pip install crossbar`. |
 | `environment: could not start MCP server` | The `command` cannot be run. Use `${CROSSBAR_PYTHON}` for Python servers; check the server starts on its own. |
 | Everything is **Unchecked** | Your golden needs evidence nothing can supply. The reason names it. Add a read-only tool that shows that state, then `crossbar judge runs/<id>` — no need to re-run. |
 | Everything is **Failed** | The agent could not run — usually an unreachable endpoint or a missing key. Run `crossbar doctor`. |
 | Everything is "not significant" | Not enough data. More tasks, or more repeats. Crossbar is telling you the truth. |
 | The agent describes the work instead of doing it | A real finding. Open the trajectory and confirm no tools were called. |
+| `no .crossbar/config.yaml found` | You are not in a project. Run `crossbar init` here. |
 | You want to stop | `Ctrl` + `C`. Everything finished so far is already on disk. |
 
 ### "Unchecked" is not a failure
@@ -398,14 +415,14 @@ wrong*. So it gets no score rather than a zero, and the reason tells you what to
 fix. Fix it, then re-judge without re-running anything:
 
 ```bash
-.venv/bin/crossbar judge runs/<run-id>
+crossbar judge .crossbar/runs
 ```
 
 ---
 
 ## Part 8: A sensible way to use this
 
-1. Run `crossbar demo` and read the output.
+1. Run `crossbar demo` and read the output, then `crossbar init`.
 2. Write **five** tasks from real work. Small ones, prose goldens.
 3. Start in **single mode** — is my model any good at this at all?
 4. `crossbar validate`, then run with `repeats: 3`.

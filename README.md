@@ -74,40 +74,62 @@ own — *is this good enough at all?* — which is usually the earlier question.
 ## Quickstart
 
 ```bash
-git clone https://github.com/kevinaaaquil/crossbar.git && cd crossbar
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+pip install crossbar
 
-.venv/bin/crossbar doctor                                   # check the machine
-.venv/bin/crossbar validate --test examples/support-triage  # check the setup
+crossbar demo          # see the whole thing work — no key, no network
+crossbar init          # create a .crossbar project here
 ```
 
-Then edit `roster.yaml` to point at your models and run it:
+`init` writes a commented config and copies an example Test in:
+
+```
+your-project/
+  .crossbar/
+    config.yaml              your models, their roles, which Tests to run
+    tests/support-triage/    the bundled example, yours to replace
+    runs/                    results land here
+```
+
+Edit `.crossbar/config.yaml` to point at your own models, then:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-.venv/bin/crossbar run --test examples/support-triage
-.venv/bin/crossbar tui --test examples/support-triage       # interactive
+
+crossbar validate      # check the setup before spending anything
+crossbar run           # run, judge, print the verdict
+crossbar tui           # the same thing, interactive
 ```
+
+Every command walks up from wherever you are to find `.crossbar`, the way `git`
+finds `.git`. `--test` and `--roster` override it when you want something
+one-off.
 
 ### Requirements
 
 Python 3.11+. Docker only if you use `kind: docker` environments. Runtime
 dependencies are `pyyaml`, `httpx` and `textual` — that is all.
 
+Working on crossbar itself rather than using it:
+
+```bash
+git clone https://github.com/kevinaaaquil/crossbar.git && cd crossbar
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/pytest
+```
+
 ## Writing a Test
 
-A Test is a directory. This is the whole format:
+A Test is a directory under `.crossbar/tests/`. This is the whole format:
 
 ```yaml
-# examples/support-triage/test.yaml
+# .crossbar/tests/support-triage/test.yaml
 name: Support triage
 repeats: 3                  # how many times each Task is attempted per model
 environment: env.yaml
 ```
 
 ```yaml
-# examples/support-triage/env.yaml
+# .crossbar/tests/support-triage/env.yaml
 kind: local                 # or: docker, with an image:
 connectors:
   mcp:
@@ -118,7 +140,7 @@ connectors:
 ```
 
 ```yaml
-# examples/support-triage/01-escalate-outage.task.yaml
+# .crossbar/tests/support-triage/01-escalate-outage.task.yaml
 id: escalate-outage
 prompt: |
   Every open ticket that mentions an outage must be escalated to urgent
@@ -172,7 +194,7 @@ More than one Test scheduled? Only the first is judged by default. The rest run
 and are stored, and you can judge them later without re-running anything:
 
 ```bash
-crossbar judge runs/
+crossbar judge .crossbar/runs
 ```
 
 Re-judging reuses the stored plan. Regenerating it would silently change the
@@ -187,7 +209,7 @@ established at all, what switching would save, and every caveat that applies.
 Then a table per model, the reasons anything could not be checked, and:
 
 ```
-runs/
+.crossbar/runs/
   run.json                  every attempt, machine-readable
   report.md                 the report, shareable
   plans/<task>.json         the Check Plan
@@ -216,7 +238,9 @@ is reported without an interval.
 
 | Command | Does |
 |---|---|
-| `crossbar validate` | Check the roster and tests before spending anything |
+| `crossbar init` | Create a `.crossbar` project folder here |
+| `crossbar demo` | Run the bundled example with scripted models — no key needed |
+| `crossbar validate` | Check the setup before spending anything |
 | `crossbar run` | Pre-flight, then run, judge, and print the verdict |
 | `crossbar judge <run>` | Judge a stored run without re-running it |
 | `crossbar report <run>` | Render a stored run (`--json` for machines) |

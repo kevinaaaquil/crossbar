@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "crossbar"
 version = "0.1.0"
-description = "Migration test bench: sweep models x harnesses over your MCP tasks, with statistics."
+description = "Compare your own model against a frontier model on your own tasks."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE.md" }
 authors = [{ name = "Eshan Singh" }]
-keywords = ["llm", "agents", "evaluation", "mcp", "benchmark", "harness"]
+keywords = ["llm", "agents", "evaluation", "mcp", "benchmark"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -45,6 +45,12 @@ crossbar = "crossbar.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The example Test ships inside the package: people install crossbar, they do
+# not clone it, so anything reachable only from the repository root does not
+# exist for them.
+[tool.setuptools.package-data]
+crossbar = ["examples/**/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

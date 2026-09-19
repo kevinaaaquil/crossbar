@@ -19,6 +19,7 @@ from crossbar.dump import DumpError, create_dump
 from crossbar.judging import Judge
 from crossbar.orchestrator import Orchestrator, RunEvent, load_run
 from crossbar.preflight import Status, preflight, render_preflight
+from crossbar.project import PROJECT_DIR, ProjectError, init_project, load_project
 from crossbar.report import render_report, write_markdown
 from crossbar.roster import Roster, RosterError, build_provider, load_roster
 
@@ -48,9 +49,9 @@ def _parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="run the tests and judge the results")
     _common(run)
-    run.add_argument("--out", default="runs", help="where to write results")
+    run.add_argument("--out", help="where to write results (default: .crossbar/runs)")
     run.add_argument("--repeats", type=int, help="override each Test's repeat count")
-    run.add_argument("--judge-tests", type=int, default=1,
+    run.add_argument("--judge-tests", type=int,
                      help="how many Tests to judge (judging is the expensive part)")
     run.add_argument("--no-judge", action="store_true", help="execute without judging")
     run.add_argument("--quiet", action="store_true")
@@ -90,6 +91,10 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--quiet", action="store_true")
     demo.set_defaults(handler=_cmd_demo)
 
+    init = sub.add_parser("init", help="create a .crossbar project folder here")
+    init.add_argument("directory", nargs="?", default=".")
+    init.set_defaults(handler=_cmd_init)
+
     tui = sub.add_parser("tui", help="the interactive terminal app")
     _common(tui)
     tui.set_defaults(handler=_cmd_tui)
@@ -97,9 +102,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--roster", default=DEFAULT_ROSTER, help="the models you connected")
-    parser.add_argument("--test", action="append", dest="tests", required=False,
-                        help="a Test directory (repeatable)")
+    parser.add_argument("--roster", help="override the project's models")
+    parser.add_argument("--test", action="append", dest="tests",
+                        help="override the project's Tests (repeatable)")
 
 
 # -- commands --------------------------------------------------------------
@@ -148,6 +153,12 @@ def _cmd_run(args) -> int:
     if args.repeats:
         tests = [_with_repeats(t, args.repeats) for t in tests]
 
+    project = getattr(args, "project", None)
+    results_dir = args.out or (str(project.results_dir) if project else "runs")
+    judge_tests = args.judge_tests if args.judge_tests is not None else (
+        project.judge_tests if project else 1
+    )
+
     # A run costs money. Check what is cheap to check before committing to it,
     # even if the user has already run validate themselves.
     if not args.skip_preflight:
@@ -160,14 +171,20 @@ def _cmd_run(args) -> int:
     # Even with --no-judge we still build the judge, because the Check Plan is
     # what tells us which evidence to capture. Skip it and the run cannot be
     # judged later without being re-run, which defeats the point of deferring.
+    project = getattr(args, "project", None)
+    results_dir = args.out or (str(project.results_dir) if project else "runs")
+    judge_tests = args.judge_tests if args.judge_tests is not None else (
+        project.judge_tests if project else 1
+    )
+
     judge_model = roster.assigned(Role.JUDGE)
     judge = Judge(build_provider(judge_model), model_id=judge_model.id)
     orchestrator = Orchestrator(
         roster=roster,
         tests=tests,
-        results_dir=args.out,
+        results_dir=results_dir,
         judge=judge,
-        judge_tests=0 if args.no_judge else args.judge_tests,
+        judge_tests=0 if args.no_judge else judge_tests,
         on_event=None if args.quiet else _progress,
     )
     result = orchestrator.run()
@@ -175,10 +192,10 @@ def _cmd_run(args) -> int:
         print()
 
     analysis = analyze(result)
-    write_markdown(analysis, Path(args.out) / "report.md")
+    write_markdown(analysis, Path(results_dir) / "report.md")
     print(render_report(analysis))
-    print(f"\nResults  {Path(args.out) / 'run.json'}")
-    print(f"Report   {Path(args.out) / 'report.md'}")
+    print(f"\nResults  {Path(results_dir) / 'run.json'}")
+    print(f"Report   {Path(results_dir) / 'report.md'}")
     return 0
 
 
@@ -279,6 +296,20 @@ def _cmd_demo(args) -> int:
     return 0
 
 
+def _cmd_init(args) -> int:
+    try:
+        created = init_project(args.directory)
+    except ProjectError as exc:
+        print(f"error: {exc}")
+        return 1
+    for path in created:
+        print(f"Wrote {path}")
+    print()
+    print(f"Next: edit {PROJECT_DIR}/config.yaml to point at your own models,")
+    print("then run:  crossbar validate")
+    return 0
+
+
 def _cmd_tui(args) -> int:
     from crossbar.tui import run_app
 
@@ -289,17 +320,29 @@ def _cmd_tui(args) -> int:
 
 
 def _load(args):
+    """Explicit flags win; otherwise fall back to the .crossbar project."""
+    explicit_roster = getattr(args, "roster", None)
+    explicit_tests = getattr(args, "tests", None)
+
+    if not explicit_roster and not explicit_tests:
+        try:
+            project = load_project()
+        except ProjectError as exc:
+            print(f"error: {exc}")
+            return None
+        args.project = project
+        return project.roster, list(project.tests)
+
     try:
-        roster = load_roster(args.roster)
+        roster = load_roster(explicit_roster or DEFAULT_ROSTER)
     except RosterError as exc:
         print(f"error: {exc}")
         return None
-    paths = args.tests or []
-    if not paths:
+    if not explicit_tests:
         print("error: no tests given; pass --test <directory>")
         return None
     tests = []
-    for path in paths:
+    for path in explicit_tests:
         try:
             tests.append(load_test(path, known_connectors=known_connectors()))
         except DomainError as exc:

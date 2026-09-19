@@ -21,7 +21,9 @@ from crossbar.providers import ScriptedProvider, Usage, scripted_step
 from crossbar.report import render_report
 from crossbar.roster import parse_roster
 
-EXAMPLE = "examples/support-triage"
+from crossbar.demo.scripted import example_test_path
+
+EXAMPLE = str(example_test_path())
 
 ROSTER = parse_roster(
     {

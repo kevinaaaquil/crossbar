@@ -1,16 +1,17 @@
 # Writing Tests and Tasks
 
-A **Test** is a directory. Everything about it is three kinds of YAML file.
+A **Test** is a directory, normally under `.crossbar/tests/`. Everything about
+it is three kinds of YAML file.
 
 ```
-my-test/
+.crossbar/tests/my-test/
   test.yaml               name, repeats, which environment
   env.yaml                what the agent is allowed to touch
   01-first.task.yaml      the work, and what a correct result means
   02-second.task.yaml
 ```
 
-Run it with `crossbar run --test my-test`.
+List it under `tests:` in `.crossbar/config.yaml` and it runs with `crossbar run`.
 
 ---
 
@@ -176,7 +177,7 @@ keeps state only in memory, write it to `${CROSSBAR_WORKSPACE}` too:
 path = os.path.join(os.environ["CROSSBAR_WORKSPACE"], "state.json")
 ```
 
-`src/crossbar/demo/tickets_server.py` is a complete, small example.
+The bundled `crossbar.demo.tickets_server` is a complete, small example.
 
 ---
 
@@ -197,11 +198,12 @@ convincingly and then not doing it — there is a whole failure mode for it.
 
 ## A workable process
 
-1. Write one Task with a prose Golden.
-2. `crossbar validate --test my-test` — catches typos, confirms the environment
-   starts, warns if nothing can be read back.
-3. `crossbar run --test my-test --repeats 1`.
-4. Read the **Check Plan** in `runs/<id>/plans/`. Does it actually describe what
+1. Write one Task with a prose Golden, and list it under `tests:` in
+   `.crossbar/config.yaml`.
+2. `crossbar validate` — catches typos, confirms the environment starts, warns
+   if nothing can be read back.
+3. `crossbar run --repeats 1`.
+4. Read the **Check Plan** in `.crossbar/runs/plans/`. Does it actually describe what
    you meant? If not, the Golden was ambiguous — fix the prose, not the plan.
 5. Read one Attempt's `evidence.json` and `judgement.json`. Did the judge look
    at the right things, and did its reasoning hold up?
@@ -219,7 +221,7 @@ Step 6 is the one people skip.
 | Outcome | Means | What to do |
 |---|---|---|
 | **Graded** | The evidence was there. There is a score. | Read it. |
-| **Unchecked** | The evidence was not available. **No score**, and a reason. | Fix your environment, then `crossbar judge <run>` — no need to re-run. |
+| **Unchecked** | The evidence was not available. **No score**, and a reason. | Fix your environment, then `crossbar judge .crossbar/runs` — no need to re-run. |
 | **Failed** | The Attempt itself errored. Counted as a failure. | Check the trajectory; usually an unreachable model or a limit hit. |
 
 Any single unchecked check leaves the whole Attempt unscored. A Golden is one

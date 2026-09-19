@@ -415,6 +415,40 @@ moment. Build this into the orchestrator from the start; retrofitting a queue
 view onto an event stream means reconstructing state the orchestrator already
 had.
 
+### 2026-09-20 — crossbar is installed, not cloned
+
+**Decided.** People will `pip install crossbar` and run it as a binary. Nothing
+may depend on a repository checkout existing.
+
+**What that forced:**
+
+- The example Test moved **inside the package** (`crossbar/examples/`) and is
+  declared as package data. It was at the repository root, so it did not ship in
+  the wheel at all — `crossbar demo` from an installed copy failed with
+  `site-packages/python3.14/examples/support-triage: not a directory`, because
+  the path was resolved by walking up from `__file__`. It now resolves through
+  `importlib.resources`.
+- Its MCP server is launched as `python -m crossbar.demo.tickets_server`, which
+  works from an installed package, rather than a path into a checkout.
+
+**Configuration lives in a `.crossbar` folder**, discovered by walking up from
+the working directory the way `git` finds `.git`. One file, `config.yaml`,
+holds the models, their roles, which Tests to run, and the run settings —
+splitting it across several files means several files to keep in step. Results
+default to `.crossbar/runs`, so a run does not scatter output through the user's
+project.
+
+`crossbar init` scaffolds it, with the example Test copied in and a config whose
+comments say what to edit. The scaffold deliberately points at **placeholder
+endpoints**: a fresh project must fail pre-flight rather than look like a
+working setup that quietly does nothing.
+
+`--roster` and `--test` still override the project, for one-off runs.
+
+**Verify this the only way that means anything:** build a wheel, install it into
+a clean virtualenv, and run from an unrelated directory. An editable install
+from the checkout will hide exactly the bugs this is about.
+
 ### 2026-09-20 — Mode is chosen at run time, and either label may hold the solo model
 
 **Decided.** Single mode means **one executing model**. Which role label it
@@ -572,13 +606,25 @@ handling.
 
 ## Commands
 
+Working on crossbar itself:
+
 ```bash
-.venv/bin/pytest                                    # 612 tests, all offline
-.venv/bin/crossbar demo                             # scripted run, no models needed
-.venv/bin/crossbar validate --test examples/support-triage
-.venv/bin/crossbar run --test examples/support-triage
-.venv/bin/crossbar tui --test examples/support-triage
+.venv/bin/pytest                    # 649 tests, all offline
+.venv/bin/crossbar demo             # scripted run, no models needed
 ```
+
+As a user would, from a project folder:
+
+```bash
+crossbar init        # scaffold .crossbar/
+crossbar validate    # check the setup
+crossbar run         # run, judge, report
+crossbar tui         # interactive
+```
+
+Before claiming packaging works, build a wheel and install it into a clean
+virtualenv outside the checkout. An editable install hides the failures that
+matter.
 
 ## Conventions
 
