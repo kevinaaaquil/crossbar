@@ -269,3 +269,34 @@ class TestSingleModelAssessment:
     def test_no_judge_conflict_is_claimed(self):
         caveats = " ".join(analyze(single([1, 1])).verdict.caveats).lower()
         assert "graded its own" not in caveats
+
+
+class TestExternalHarnessCaveat:
+    """Comparing against an agent that brings its own harness measures
+    something different, and the reader must not have to guess which."""
+
+    def run_with_cli(self, external=("frontier",)):
+        attempts = [attempt("local", f"t{i}", 0, score=1.0) for i in range(4)]
+        attempts += [attempt("frontier", f"t{i}", 0, score=1.0, cost=10.0) for i in range(4)]
+        return RunResult(
+            run_id="r",
+            attempts=tuple(attempts),
+            roles={"candidate": "local", "baseline": "frontier"},
+            judged_tests=("T",),
+            external_harness_models=tuple(external),
+        )
+
+    def test_it_is_flagged_as_a_product_comparison(self):
+        assert analyze(self.run_with_cli()).is_product_comparison is True
+
+    def test_an_ordinary_run_is_not(self):
+        assert analyze(paired([1, 1], [1, 1])).is_product_comparison is False
+
+    def test_a_caveat_names_the_model_that_brought_its_own_harness(self):
+        caveats = " ".join(analyze(self.run_with_cli()).verdict.caveats)
+        assert "frontier" in caveats
+
+    def test_the_caveat_says_what_kind_of_comparison_it_is(self):
+        caveats = " ".join(analyze(self.run_with_cli()).verdict.caveats).lower()
+        assert "product" in caveats
+        assert "harness" in caveats

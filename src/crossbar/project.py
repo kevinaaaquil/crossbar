@@ -165,6 +165,19 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     price: {input_per_mtok: 15.0, output_per_mtok: 75.0}
 
+  # Or compare against a shipped agent rather than a bare model. This runs the
+  # real claude CLI, which brings its own harness — so the report will label the
+  # result a product comparison rather than a controlled model comparison.
+  #
+  # It runs with --bare, so the operator's own hooks, skills and memory stay out
+  # of the measurement. --bare also means ANTHROPIC_API_KEY is required: a
+  # subscription login is not enough.
+  # - id: claude-code
+  #   provider: claude-cli
+  #   model: opus
+  #   command: claude          # the binary, if it is not on PATH
+  #   price: {input_per_mtok: 15.0, output_per_mtok: 75.0}
+
 roles:
   candidate: my-model       # the model under test
   baseline: frontier        # what it is compared against — omit for a

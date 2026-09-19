@@ -10,6 +10,7 @@ into disagreeing about whether a setup is sound.
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
@@ -72,6 +73,9 @@ def preflight(
     checks.append(_check_keys(roster))
     checks.append(_check_judge(roster))
     checks.append(_check_docker(tests))
+    cli_check = _check_agent_clis(roster)
+    if cli_check is not None:
+        checks.append(cli_check)
 
     for test in tests:
         if start_environments:
@@ -129,6 +133,37 @@ def _check_judge(roster: Roster) -> Check:
             "will grade its own attempts — blinded, but a conflict of interest",
         )
     return Check("judge", Status.OK, f"judged by {roster.assigned(Role.JUDGE).id}")
+
+
+def _check_agent_clis(roster: Roster) -> Check | None:
+    """Agent CLIs have to exist, and to be able to authenticate.
+
+    crossbar runs them with `--bare` so the operator's own hooks, skills and
+    memory do not join the measurement — and `--bare` reads Anthropic
+    credentials only from ANTHROPIC_API_KEY, never from an OAuth session. A
+    subscription login is not enough, and without the key every Attempt fails
+    identically with "Not logged in".
+    """
+    cli_models = [m for m in roster.models if m.drives_itself]
+    if not cli_models:
+        return None
+
+    problems = []
+    for model in cli_models:
+        if shutil.which(model.command) is None and "/" not in model.command:
+            problems.append(f"{model.id}: {model.command!r} is not on PATH")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        problems.append(
+            "ANTHROPIC_API_KEY is not set, and crossbar runs the CLI with --bare, "
+            "which ignores an OAuth login"
+        )
+    if problems:
+        return Check("agent-cli", Status.FAIL, "; ".join(problems))
+    return Check(
+        "agent-cli",
+        Status.OK,
+        ", ".join(f"{m.id} via {m.command}" for m in cli_models),
+    )
 
 
 def _check_docker(tests: Sequence[Test]) -> Check:

@@ -415,6 +415,43 @@ moment. Build this into the orchestrator from the start; retrofitting a queue
 view onto an event stream means reconstructing state the orchestrator already
 had.
 
+### 2026-09-20 — Agent CLIs are built, and what probing the real one changed
+
+**Built.** `CliAgent` runs an agent CLI headless; `claude-cli` is a provider kind
+in the roster; the orchestrator reconnects before capture; the report labels the
+result a product comparison.
+
+**Probing `claude` 2.1.274 directly contradicted v0.1's parser in four ways.**
+Worth recording, because every one of them would have produced quietly wrong
+numbers rather than an error:
+
+1. **The operator's own setup contaminates the stream.** Without `--bare`, a
+   SessionStart hook fired and two Skill calls burned turns before the model
+   answered anything. That is not Claude Code's behaviour, it is *that laptop's*.
+   crossbar therefore runs `--bare` by default.
+2. **`--bare` requires `ANTHROPIC_API_KEY`.** It reads Anthropic credentials
+   only from the environment, never from an OAuth session, so a subscription
+   login returns "Not logged in". Pre-flight checks for the key.
+3. **`is_error` is authoritative, not `subtype`.** The failing result carried
+   `subtype: "success"` *and* `is_error: true` together. v0.1 checked subtype
+   first and would have recorded that failure as a success.
+4. **Usage is mostly cache tokens.** `cache_creation_input_tokens` and
+   `cache_read_input_tokens` sit alongside `input_tokens`, and dwarfed it
+   (8604 and 10519 against 2). v0.1 read only `input_tokens`, understating usage
+   by orders of magnitude. Cost comes from the CLI's own `total_cost_usd`.
+
+Also: `thinking` blocks appear in assistant content and must not be read as
+answer text, and event types v0.1 never saw (`hook_started`, `rate_limit_event`,
+`thinking_tokens`) appear routinely and must be skipped rather than treated as
+a problem.
+
+**The reconnect.** An agent that owns its harness runs its own copies of the
+task's MCP servers, so crossbar's connectors hold state it never touched.
+Capturing through them reads the seed state and scores the Attempt as a failure
+— silently. The orchestrator now tears the connectors down and rebuilds them
+against the same workspace whenever `agent.owns_harness` is true, and a test
+asserts the stale read is what happens without it.
+
 ### 2026-09-20 — crossbar is installed, not cloned
 
 **Decided.** People will `pip install crossbar` and run it as a binary. Nothing
@@ -541,7 +578,7 @@ rediscovered as surprises, each with the trigger that should bring it back.
 | 2 | **Can the user edit a Check Plan?** Showing it to them implies they can correct one the judge got wrong. | A user hits a plan that is wrong and has no way to fix it |
 | 3 | **Connector set: fixed per Task, or user-varied?** Fixed keeps the comparison controlled; varying it answers a different question ("does my model need browser access for this?"). Moot while MCP is the only connector. | A second connector exists |
 | 4 | **Browser connector.** Backend-only containers first, browser second — or is a UI-driving Task the motivating case? | Backend-only MCP works end to end |
-| 4b | **Agent CLIs as models** — Claude Code, Codex, Cursor. The `Agent` seam exists; nothing is wired to it. See [the note below](#agent-clis-as-models) for what it actually takes. | Someone wants to compare against a shipped agent rather than a model |
+| 4b | **Codex and Cursor CLIs.** Claude Code is built; the adapter shape is known good. Their flags and output shapes need probing, not recalling. | Someone wants to compare against one of those |
 | 5 | **Re-judge verdict conflicts.** If a Test is re-judged and the verdict differs from the first pass, which one counts? | Re-judging is actually implemented |
 | 6 | **Parallel execution.** Multiple containers at once. The orchestrator keeps the seam; it is defaulted to serial. | Serial throughput becomes the bottleneck |
 | 7 | **Judge self-agreement measurement.** Grade the same evidence twice at temperature 0 and report how often the verdict holds. | Before anyone makes a real decision on these numbers |
@@ -552,8 +589,9 @@ and an unmeasured judge quietly undermines it.
 
 ### Agent CLIs as models
 
-Assessed 2026-09-19. **Not possible today**, and worth writing down why, because
-the blocking piece is not the obvious one.
+**Built for Claude Code on 2026-09-20** — see the decision log. What follows was
+the assessment beforehand, kept because the third point is the one that would
+otherwise be rediscovered painfully for Codex and Cursor too.
 
 Three pieces of work:
 

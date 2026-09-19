@@ -23,7 +23,7 @@ class McpConnector:
         self.config = config
         self.clients: dict[str, McpStdioClient] = {}
         self._tools: tuple[ToolSpec, ...] | None = None
-        self._handle: EnvironmentHandle | None = None
+        self.handle: EnvironmentHandle | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -34,7 +34,7 @@ class McpConnector:
         if not servers:
             raise ConnectorError("the mcp connector needs at least one server")
 
-        self._handle = handle
+        self.handle = handle
         started: dict[str, McpStdioClient] = {}
         try:
             for spec in servers:

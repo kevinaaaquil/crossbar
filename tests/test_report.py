@@ -170,3 +170,14 @@ class TestSingleModelReport:
 
     def test_a_two_model_report_is_unaffected(self):
         assert "VERDICT" in render_verdict(analysis(*TIED)).upper()
+
+
+class TestProductComparisonIsLabelled:
+    def test_the_verdict_says_so(self):
+        from tests.test_analysis import TestExternalHarnessCaveat
+
+        result = analyze(TestExternalHarnessCaveat().run_with_cli())
+        assert "product comparison" in render_verdict(result).lower()
+
+    def test_an_ordinary_verdict_does_not(self):
+        assert "product comparison" not in render_verdict(analysis(*TIED)).lower()

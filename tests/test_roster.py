@@ -310,3 +310,49 @@ class TestSingleModeWithEitherLabel:
 
     def test_in_a_comparison_the_candidate_is_the_model_under_test(self):
         assert roster().under_test.id == "local-qwen"
+
+
+class TestAgentCliModels:
+    """An agent CLI is connected like any other model, but drives itself."""
+
+    def cli_roster(self, **overrides):
+        data = {
+            "models": [
+                {"id": "kimi", "provider": "openai", "model": "k",
+                 "base_url": "http://localhost:1/v1"},
+                {"id": "claude-code", "provider": "claude-cli", "model": "opus",
+                 "price": {"input_per_mtok": 15.0, "output_per_mtok": 75.0}},
+            ],
+            "roles": {"candidate": "kimi", "baseline": "claude-code"},
+        }
+        data.update(overrides)
+        return parse_roster(data, source="<test>")
+
+    def test_claude_cli_is_a_valid_provider(self):
+        assert self.cli_roster().model("claude-code").provider == "claude-cli"
+
+    def test_it_needs_no_base_url(self):
+        assert self.cli_roster().model("claude-code").base_url == ""
+
+    def test_it_needs_no_api_key_variable(self):
+        assert self.cli_roster().model("claude-code").api_key() == ""
+
+    def test_it_has_no_http_provider(self):
+        """It drives itself; there is no endpoint for us to call."""
+        assert build_provider(self.cli_roster().model("claude-code")) is None
+
+    def test_a_cli_binary_can_be_named(self):
+        cfg = self.cli_roster(models=[
+            {"id": "kimi", "provider": "openai", "model": "k",
+             "base_url": "http://localhost:1/v1"},
+            {"id": "cc", "provider": "claude-cli", "model": "opus",
+             "command": "/opt/bin/claude"},
+        ], roles={"candidate": "kimi", "baseline": "cc"})
+        assert cfg.model("cc").command == "/opt/bin/claude"
+
+    def test_the_command_defaults_to_claude(self):
+        assert self.cli_roster().model("claude-code").command == "claude"
+
+    def test_it_can_hold_any_role(self):
+        cfg = self.cli_roster(roles={"candidate": "claude-code", "baseline": "kimi"})
+        assert cfg.assigned(Role.CANDIDATE).id == "claude-code"

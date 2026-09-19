@@ -80,6 +80,10 @@ class RunResult:
     roles: Mapping[str, str] = field(default_factory=dict)
     judged_tests: tuple[str, ...] = ()
     judge_is_baseline: bool = False
+    external_harness_models: tuple[str, ...] = ()
+    """Models that brought their own harness — an agent CLI rather than a model
+    driven through ours. Comparing one of these against a model in our harness
+    is a product comparison, not a controlled one, and the report says so."""
     started_at: float = 0.0
     finished_at: float = 0.0
     results_dir: str = ""
@@ -105,6 +109,7 @@ class RunResult:
             "roles": dict(self.roles),
             "judged_tests": list(self.judged_tests),
             "judge_is_baseline": self.judge_is_baseline,
+            "external_harness_models": list(self.external_harness_models),
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "attempts": [a.to_dict() for a in self.attempts],
@@ -147,6 +152,7 @@ def load_run(path: str | os.PathLike[str]) -> RunResult:
         roles=dict(data.get("roles") or {}),
         judged_tests=tuple(data.get("judged_tests") or []),
         judge_is_baseline=bool(data.get("judge_is_baseline", False)),
+        external_harness_models=tuple(data.get("external_harness_models") or []),
         started_at=float(data.get("started_at", 0.0)),
         finished_at=float(data.get("finished_at", 0.0)),
         results_dir=str(root),

@@ -17,7 +17,7 @@ import yaml
 from crossbar.domain import Role
 from crossbar.providers import AnthropicProvider, OpenAICompatProvider, Provider, Usage
 
-PROVIDER_KINDS = ("openai", "anthropic")
+PROVIDER_KINDS = ("openai", "anthropic", "claude-cli")
 
 
 class RosterError(ValueError):
@@ -43,6 +43,14 @@ class ModelSpec:
     price: Price = field(default_factory=Price)
     max_tokens: int = 2048
     temperature: float | None = None
+    command: str = "claude"
+    """Agent-CLI models only: the binary to run."""
+
+    @property
+    def drives_itself(self) -> bool:
+        """True for an agent CLI, which brings its own harness rather than
+        being driven through ours."""
+        return self.provider == "claude-cli"
 
     def api_key(self) -> str:
         if self.api_key_inline:
@@ -159,6 +167,7 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
                 ),
                 max_tokens=int(entry.get("max_tokens") or 2048),
                 temperature=entry.get("temperature"),
+                command=str(entry.get("command") or "claude"),
             )
         )
 
@@ -210,7 +219,10 @@ def load_roster(path: str | os.PathLike[str]) -> Roster:
     return parse_roster(data, source=str(target))
 
 
-def build_provider(model: ModelSpec) -> Provider:
+def build_provider(model: ModelSpec) -> Provider | None:
+    """The HTTP client for a model, or None when it drives itself."""
+    if model.drives_itself:
+        return None
     if model.provider == "openai":
         return OpenAICompatProvider(
             model=model.model, base_url=model.base_url, api_key=model.api_key()

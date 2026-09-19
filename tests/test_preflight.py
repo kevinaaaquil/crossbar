@@ -232,3 +232,53 @@ class TestSingleModelPreflight:
     def test_half_the_attempts_are_planned(self):
         """One role executing means one attempt per task per repeat."""
         assert preflight(self.single_roster(), [a_test()]).planned_attempts == 1
+
+
+class TestAgentCliPreflight:
+    """A missing CLI, or a --bare run with no API key, fails every attempt."""
+
+    def cli_roster(self, command="claude"):
+        return parse_roster(
+            {
+                "models": [
+                    {"id": "local", "provider": "openai", "model": "q",
+                     "base_url": "http://localhost:1/v1"},
+                    {"id": "cc", "provider": "claude-cli", "model": "opus",
+                     "command": command},
+                ],
+                "roles": {"candidate": "local", "baseline": "cc"},
+            },
+            source="<test>",
+        )
+
+    def test_a_missing_cli_binary_is_a_failure(self, monkeypatch):
+        report = preflight(self.cli_roster("no-such-claude-xyz"), [a_test()],
+                           start_environments=False)
+        assert report.ok is False
+        assert any("no-such-claude-xyz" in f.detail for f in report.failures)
+
+    def test_a_present_binary_with_a_key_passes(self, monkeypatch, tmp_path):
+        import stat
+
+        script = tmp_path / "claude"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        report = preflight(self.cli_roster(str(script)), [a_test()], start_environments=False)
+        check = next(c for c in report.checks if c.name == "agent-cli")
+        assert check.status is Status.OK
+
+    def test_a_missing_anthropic_key_is_a_failure_for_a_bare_run(self, monkeypatch, tmp_path):
+        """--bare reads credentials only from ANTHROPIC_API_KEY, never OAuth."""
+        import stat
+
+        script = tmp_path / "claude"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        report = preflight(self.cli_roster(str(script)), [a_test()], start_environments=False)
+        assert any("ANTHROPIC_API_KEY" in f.detail for f in report.failures)
+
+    def test_a_roster_with_no_cli_models_skips_the_check(self):
+        names = {c.name for c in preflight(roster(), [a_test()], start_environments=False).checks}
+        assert "agent-cli" not in names

@@ -41,6 +41,11 @@ class Connector(Protocol):
 
     name: str
 
+    handle: EnvironmentHandle | None
+    """The Environment this connector was set up against. Public because an
+    external agent CLI has to be handed the same workspace, or the state it
+    leaves behind cannot be read back."""
+
     def setup(self, handle: EnvironmentHandle) -> None: ...
     def teardown(self) -> None: ...
 

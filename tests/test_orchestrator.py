@@ -436,3 +436,105 @@ class TestRoleOverride:
                 roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
                 agent_factory=solving_agent, judge=judge(), roles=(Role.JUDGE,),
             )
+
+
+class TestAgentsThatOwnTheirHarness:
+    """An agent CLI runs its own copies of the MCP servers, so crossbar's
+    connectors never see what it did. Evidence capture must reconnect."""
+
+    def cli_roster(self):
+        from crossbar.roster import parse_roster
+
+        return parse_roster(
+            {
+                "models": [
+                    {"id": "local", "provider": "openai", "model": "q",
+                     "base_url": "http://localhost:1/v1"},
+                    {"id": "cc", "provider": "claude-cli", "model": "opus"},
+                ],
+                "roles": {"candidate": "cc", "baseline": "local"},
+            },
+            source="<test>",
+        )
+
+    def mutating_agent(self, priority="urgent"):
+        """Stands in for a CLI: changes state through its own connection."""
+        from crossbar.connectors import McpConnector
+        from crossbar.trace import RunStatus, Trajectory
+
+        class OutsideAgent:
+            id = "cc"
+            owns_harness = True
+
+            def run(self, task, connectors, repeat=0):
+                # Deliberately NOT using the connectors it was handed — exactly
+                # what an external CLI does.
+                own = McpConnector(connectors[0].config)
+                own.setup(connectors[0].handle)
+                try:
+                    own.call("tickets__set_priority",
+                             {"id": "T-1001", "priority": priority})
+                finally:
+                    own.teardown()
+                traj = Trajectory(task_id=task.id, agent_id=self.id, repeat=repeat)
+                traj.finish(RunStatus.COMPLETED, "done")
+                return traj
+
+        return OutsideAgent()
+
+    def plan_reading_state(self):
+        return CheckPlan.from_dict({
+            "task_id": "escalate-outage",
+            "items": [{
+                "id": "state", "criterion": "T-1001 is urgent",
+                "evidence": [{"label": "the store", "connector": "mcp",
+                              "probe": "tickets__dump_db", "args": {}}],
+            }],
+            "unsatisfiable": [],
+        })
+
+    def test_evidence_reflects_what_the_outside_agent_did(self, tmp_path):
+        """Without the reconnect this reads the seed state and silently scores
+        every CLI attempt as a failure."""
+        result = Orchestrator(
+            roster=self.cli_roster(),
+            tests=[single_task_test()],
+            results_dir=str(tmp_path),
+            agent_factory=lambda *a: self.mutating_agent(),
+            judge=ScriptedJudge(plan=self.plan_reading_state()),
+            roles=(Role.CANDIDATE,),
+        ).run()
+
+        content = result.attempts[0].evidence.items[0].content
+        tickets = {t["id"]: t for t in json.loads(content)["tickets"]}
+        assert tickets["T-1001"]["priority"] == "urgent"
+
+    def test_an_in_process_agent_still_captures_normally(self, tmp_path):
+        """The reconnect must not disturb the ordinary path."""
+        result = orchestrate(tmp_path, judge_obj=judge()).run()
+        assert all(a.evidence.items for a in result.attempts)
+
+    def test_the_run_records_that_a_harness_was_not_ours(self, tmp_path):
+        result = Orchestrator(
+            roster=self.cli_roster(),
+            tests=[single_task_test()],
+            results_dir=str(tmp_path),
+            agent_factory=lambda *a: self.mutating_agent(),
+            judge=ScriptedJudge(plan=self.plan_reading_state()),
+            roles=(Role.CANDIDATE,),
+        ).run()
+        assert result.external_harness_models == ("cc",)
+
+    def test_an_ordinary_run_records_no_external_harness(self, tmp_path):
+        assert orchestrate(tmp_path).run().external_harness_models == ()
+
+    def test_the_default_factory_builds_a_cli_agent(self, tmp_path):
+        from crossbar.agents import CliAgent
+
+        orchestrator = Orchestrator(
+            roster=self.cli_roster(), tests=[single_task_test()],
+            results_dir=str(tmp_path), judge=judge(), roles=(Role.CANDIDATE,),
+        )
+        agent = orchestrator._default_agent("cc", Role.CANDIDATE, single_task_test().tasks[0], 0)
+        assert isinstance(agent, CliAgent)
+        assert agent.model == "opus"

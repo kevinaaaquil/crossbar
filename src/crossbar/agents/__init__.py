@@ -6,6 +6,7 @@ judging and statistics never learn the difference.
 """
 
 from crossbar.agents.base import Agent
+from crossbar.agents.cli_agent import CliAgent
 from crossbar.agents.model_agent import ModelAgent
 
-__all__ = ["Agent", "ModelAgent"]
+__all__ = ["Agent", "CliAgent", "ModelAgent"]

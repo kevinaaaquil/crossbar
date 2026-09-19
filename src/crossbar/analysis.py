@@ -91,6 +91,9 @@ class Analysis:
     unchecked_reasons: tuple[str, ...] = ()
     task_ids: tuple[str, ...] = ()
     is_single_model: bool = False
+    is_product_comparison: bool = False
+    """At least one model brought its own harness. The number still means
+    something, but something other than a controlled model comparison."""
     """One model assessed on its own. There is nothing to compare against, so
     the report states how it did rather than whether to switch."""
 
@@ -132,6 +135,7 @@ def analyze(result: RunResult, n_resamples: int = N_RESAMPLES, seed: int = 0) ->
         unchecked_reasons=tuple(_unchecked_reasons(judged)),
         task_ids=tuple(task_ids),
         is_single_model=not baseline_id,
+        is_product_comparison=bool(result.external_harness_models),
     )
 
 
@@ -312,6 +316,15 @@ def _caveats(summaries: Sequence[ModelSummary], result: RunResult) -> list[str]:
                 "failures. Supply the evidence that was missing and re-judge before relying "
                 "on this."
             )
+
+    external = result.external_harness_models
+    if external:
+        caveats.append(
+            f"{', '.join(external)} brought its own harness rather than running in "
+            "crossbar's, so this is a product comparison, not a controlled model "
+            "comparison. A shipped agent carries years of engineering around the "
+            "model; if it wins, that is part of why."
+        )
 
     unjudged = result.unjudged_tests
     if unjudged:

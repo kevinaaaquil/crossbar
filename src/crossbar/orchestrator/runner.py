@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from crossbar.agents import ModelAgent
+from crossbar.agents import CliAgent, ModelAgent
 from crossbar.connectors import build_connector
 from crossbar.domain import Role, Task, Test
 from crossbar.environment import build_environment
@@ -84,6 +84,7 @@ class Orchestrator:
         self.on_event = on_event or (lambda event: None)
         self.judge_tests = judge_tests
         self.run_id = uuid.uuid4().hex[:12]
+        self._external_harness_models: set[str] = set()
         self.queue: list[QueueItem] = self._build_queue()
 
     # -- planning ----------------------------------------------------------
@@ -148,6 +149,7 @@ class Orchestrator:
             },
             judged_tests=judged,
             judge_is_baseline=self._judge_is_baseline(),
+            external_harness_models=tuple(sorted(self._external_harness_models)),
             started_at=started,
             finished_at=time.time(),
             results_dir=str(self.results_dir),
@@ -226,11 +228,15 @@ class Orchestrator:
 
         environment = build_environment(task.environment or test.environment)
         connectors: list[Any] = []
+        handle = None
         try:
             handle = environment.start()
             connectors = self._connectors(task, test, handle)
             agent = self.agent_factory(model.id, role, task, repeat)
             attempt.trajectory = agent.run(task, connectors, repeat=repeat)
+            if getattr(agent, "owns_harness", False):
+                self._external_harness_models.add(model.id)
+                connectors = self._reconnect(connectors, task, test, handle)
             attempt.evidence = capture(
                 plan.evidence_requests() if plan else (),
                 connectors,
@@ -243,10 +249,7 @@ class Orchestrator:
             attempt.evidence = attempt.evidence or Evidence(final_answer="")
         finally:
             for connector in connectors:
-                try:
-                    connector.teardown()
-                except Exception:
-                    pass
+                _quietly(connector.teardown)
             environment.stop()
 
         attempt.wall_time_s = time.monotonic() - started
@@ -261,6 +264,18 @@ class Orchestrator:
         done, total = self.progress()
         self._emit("attempt_finished", item, completed=done, total=total)
         return attempt
+
+    def _reconnect(self, connectors: list, task: Task, test: Test, handle) -> list:
+        """Rebuild the connectors against the same workspace.
+
+        An agent that owns its harness ran its own copies of the servers, so
+        ours are holding state it never touched. Capturing through them would
+        read the seed state and score the Attempt as a failure — silently, with
+        nothing to notice.
+        """
+        for connector in connectors:
+            _quietly(connector.teardown)
+        return self._connectors(task, test, handle)
 
     def _judge_attempt(self, attempt: Attempt, plan: CheckPlan | None) -> None:
         if attempt.error and attempt.trajectory is None:
@@ -351,6 +366,8 @@ class Orchestrator:
 
     def _default_agent(self, model_id: str, role: Role, task: Task, repeat: int):
         model = self.roster.model(model_id)
+        if model.drives_itself:
+            return CliAgent(model.id, model=model.model or None, claude_bin=model.command)
         return ModelAgent(model.id, build_provider(model))
 
     def _queue_item(self, test, task, model_id, role, repeat) -> QueueItem | None:
@@ -378,6 +395,13 @@ class Orchestrator:
             self.on_event(event)
         except Exception:
             pass  # a noisy observer must not break a run
+
+
+def _quietly(action) -> None:
+    try:
+        action()
+    except Exception:
+        pass
 
 
 def _json(data) -> str:
