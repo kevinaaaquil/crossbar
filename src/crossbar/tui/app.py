@@ -44,8 +44,10 @@ from crossbar.domain import Role, Test, load_test
 from crossbar.dump import create_dump
 from crossbar.judging import Judge
 from crossbar.orchestrator import Orchestrator, RunEvent, RunResult
+from crossbar.project import CONFIG_NAME, PROJECT_DIR, find_project
 from crossbar.report import render_report
 from crossbar.roster import build_provider, Roster, load_roster
+from crossbar.tui.setup import SetupCommands, SetupPanel
 from crossbar.tui.formatting import (
     attempt_line,
     queue_event_line,
@@ -58,6 +60,16 @@ from crossbar.tui.formatting import (
 
 MAX_LOG_LINES = 500
 """A long sweep would otherwise grow the log without bound."""
+
+
+def default_config_path() -> Path:
+    """The project config this app edits, found the way every command finds it.
+
+    Falling back to the working directory rather than refusing to open means
+    Setup can scaffold a project for someone who has not run `crossbar init`.
+    """
+    root = find_project()
+    return root / CONFIG_NAME if root else Path.cwd() / PROJECT_DIR / CONFIG_NAME
 
 
 class CrossbarApp(App):
@@ -79,6 +91,11 @@ class CrossbarApp(App):
     #judge-count { width: 8; }
     #judge-count-total { width: auto; }
     .pane-body { height: auto; }
+    .setup-row { height: 3; }
+    .setup-row Label { padding: 1 1 0 0; }
+    .setup-narrow { width: 14; }
+    #setup-models { height: 8; border: solid $panel; }
+    SetupPanel Static { height: auto; }
     """
 
     BINDINGS = [
@@ -87,10 +104,14 @@ class CrossbarApp(App):
         Binding("2", "show_tab('tests')", "Tests"),
         Binding("3", "show_tab('run')", "Run view"),
         Binding("4", "show_tab('results')", "Results"),
+        Binding("s", "show_tab('setup')", "Setup"),
         Binding("m", "toggle_mode", "Mode"),
         Binding("d", "dump", "Dump"),
         Binding("q", "quit", "Quit"),
     ]
+
+    COMMANDS = App.COMMANDS | {SetupCommands}
+    """Setup is reachable from the command palette (ctrl+p) as well as by key."""
 
     def __init__(
         self,
@@ -101,8 +122,12 @@ class CrossbarApp(App):
         agent_factory: Callable[..., Any] | None = None,
         judge_tests: int = 1,
         mode: str | None = None,
+        config_path: str | Path | None = None,
     ) -> None:
         super().__init__()
+        self.config_path = Path(config_path) if config_path else default_config_path()
+        """The `.crossbar/config.yaml` the Setup tab reads and writes."""
+
         self.roster = roster
         self.tests = list(tests)
         self.results_dir = str(results_dir)
@@ -166,6 +191,8 @@ class CrossbarApp(App):
                     yield ListView(id="results-list")
                     with VerticalScroll():
                         yield Static(id="results-detail", markup=False, classes="pane-body")
+            with TabPane("5 Setup", id="setup"):
+                yield SetupPanel(self.config_path, id="setup-panel")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -318,6 +345,9 @@ class CrossbarApp(App):
         self._show_attempt(0 if result.attempts else None)
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        # Setup has a list of its own, and its highlights mean something else.
+        if event.list_view.id != "results-list":
+            return
         self._show_attempt(event.list_view.index)
 
     def _show_attempt(self, index: int | None) -> None:

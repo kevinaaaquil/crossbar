@@ -299,11 +299,13 @@ class TestAttemptDetail:
 
 
 class TestTabs:
-    async def test_the_app_has_the_four_tabs(self, tmp_path):
+    async def test_the_app_has_its_tabs_in_order(self, tmp_path):
         app = make_app(tmp_path)
         async with app.run_test():
             panes = app.query_one(TabbedContent).query("TabPane")
-            assert [p.id for p in panes] == ["models", "tests", "run", "results"]
+            assert [p.id for p in panes] == [
+                "models", "tests", "run", "results", "setup",
+            ]
 
     async def test_the_number_keys_switch_tabs(self, tmp_path):
         app = make_app(tmp_path)
