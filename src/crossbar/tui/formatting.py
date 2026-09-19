@@ -37,8 +37,26 @@ def roles_of(roster: Roster, model_id: str) -> tuple[str, ...]:
     return tuple(held)
 
 
-def render_roster(roster: Roster) -> str:
-    lines = ["MODELS", "", f"  {'MODEL':<20}{'ROLE':<30}CONNECTION", "  " + "-" * (WIDTH - 2)]
+def render_roster(roster: Roster, mode: str = "comparison", active_roles=None) -> str:
+    active = tuple(active_roles) if active_roles is not None else roster.execution_roles
+    running = ", ".join(roster.assigned(r).id for r in active)
+    if mode == "single":
+        headline = f"MODE  single — {running} assessed on its own"
+    else:
+        headline = f"MODE  comparison — {running}"
+    if not len(roster.execution_roles) > 1:
+        headline += "\n      (only one model is assigned, so there is nothing to compare against)"
+    else:
+        headline += "\n      press m to switch"
+
+    lines = [
+        "MODELS",
+        "",
+        *(f"  {line}" for line in headline.splitlines()),
+        "",
+        f"  {'MODEL':<20}{'ROLE':<30}CONNECTION",
+        "  " + "-" * (WIDTH - 2),
+    ]
     for model in roster.models:
         held = roles_of(roster, model.id)
         label = " · ".join(held) if held else "unassigned"
@@ -46,13 +64,17 @@ def render_roster(roster: Roster) -> str:
         lines.append(f"  {model.id[:19]:<20}{label:<30}{connection}")
 
     lines.append("")
-    if roster.judge_is_baseline:
+    # The conflict exists only if the judging model also *runs*. In single mode
+    # the baseline judges without executing, so there is nothing to be
+    # conflicted about, and saying otherwise would be a false alarm.
+    judging_model = roster.assigned(Role.JUDGE).id
+    judge_also_runs = judging_model in {roster.assigned(r).id for r in active}
+    if judge_also_runs:
         # Fixed lines rather than a wrapper: this warning is the one piece of
         # text on the screen that must never be quietly reflowed out of shape.
-        baseline = roster.assigned(Role.BASELINE)
         lines.extend(
             [
-                f"  !! No judge is assigned, so the baseline judges. {baseline.id} will",
+                f"  !! No judge is assigned, so the baseline judges. {judging_model} will",
                 "     grade its own Attempts. That is a conflict of interest, and it is",
                 "     structural: blinding is applied — the judge is never told whose",
                 "     Attempt it is reading — but models still show self-preference.",
@@ -60,8 +82,10 @@ def render_roster(roster: Roster) -> str:
             ]
         )
     else:
-        judge = roster.assigned(Role.JUDGE)
-        lines.append(f"  The judge ({judge.id}) is independent of the baseline.")
+        lines.append(
+            f"  Judged by {judging_model}, which does not run in this mode, so nothing "
+            "here grades its own work."
+        )
     return "\n".join(lines)
 
 

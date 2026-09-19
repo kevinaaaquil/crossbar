@@ -87,6 +87,7 @@ class CrossbarApp(App):
         Binding("2", "show_tab('tests')", "Tests"),
         Binding("3", "show_tab('run')", "Run view"),
         Binding("4", "show_tab('results')", "Results"),
+        Binding("m", "toggle_mode", "Mode"),
         Binding("d", "dump", "Dump"),
         Binding("q", "quit", "Quit"),
     ]
@@ -99,6 +100,7 @@ class CrossbarApp(App):
         judge: Any = None,
         agent_factory: Callable[..., Any] | None = None,
         judge_tests: int = 1,
+        mode: str | None = None,
     ) -> None:
         super().__init__()
         self.roster = roster
@@ -107,6 +109,10 @@ class CrossbarApp(App):
         self.judge = judge
         self.agent_factory = agent_factory
         self.judge_tests = judge_tests
+        self.mode = mode or ("single" if roster.is_single_model else "comparison")
+        """Which models execute. 'single' assesses the model under test on its
+        own; 'comparison' runs everything the roster assigns. A roster with one
+        executing model can only be in single mode."""
 
         self.orchestrator: Orchestrator = self._build_orchestrator()
         self.result: RunResult | None = None
@@ -163,12 +169,39 @@ class CrossbarApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._set("#models-body", render_roster(self.roster))
+        self._set("#models-body", render_roster(self.roster, self.mode, self.active_roles))
         self._set("#tests-body", render_tests(self.tests, self.judge_tests))
         if len(self.tests) < 2:
             self.query_one("#judge-controls").display = False
         self._set("#results-report", "Nothing has been run yet. Press r to start a sweep.")
         self._set("#results-detail", render_attempt(None))
+        self._refresh_run_view()
+
+    @property
+    def can_compare(self) -> bool:
+        """Whether there is a second model to compare against at all."""
+        return len(self.roster.execution_roles) > 1
+
+    @property
+    def active_roles(self) -> tuple:
+        """The roles this mode runs."""
+        if self.mode == "single":
+            return (self.roster.execution_roles[0],)
+        return self.roster.execution_roles
+
+    def action_toggle_mode(self) -> None:
+        """Switch between assessing one model and comparing two.
+
+        Refused mid-run: the queue is already built and half-executed, and
+        changing what it means partway would make the results incomparable.
+        """
+        if self.sweep_running:
+            return
+        if not self.can_compare:
+            return
+        self.mode = "single" if self.mode == "comparison" else "comparison"
+        self.orchestrator = self._build_orchestrator()
+        self._set("#models-body", render_roster(self.roster, self.mode, self.active_roles))
         self._refresh_run_view()
 
     def chosen_judge_tests(self) -> int:
@@ -326,6 +359,7 @@ class CrossbarApp(App):
             agent_factory=self.agent_factory,
             on_event=self._on_run_event,
             judge_tests=self.chosen_judge_tests(),
+            roles=self.active_roles,
         )
 
 

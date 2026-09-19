@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 575
+**Total tests:** 619
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -251,6 +251,20 @@ says the user must be *asked* how many Tests to judge when more than one is
 scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
+
+### Mode toggle — done
+`m` in the TUI switches between assessing one model and comparing two, without
+editing the roster. The orchestrator takes a `roles` override; the TUI passes
+`active_roles` into the roster panel.
+
+Single mode generalised to **one executing model, either label** — a roster with
+only a baseline assigned is a valid single-model run, so "the baseline model is
+explicitly used" needs no special case.
+
+Found while rendering it: in single mode with a two-model roster the baseline
+judges but never runs, so it is not grading its own work — yet the conflict
+warning still fired. It is now driven by whether the judging model is among the
+models actually running.
 
 ### Single-model runs — done
 A Candidate with no Baseline: one model assessed on its own. 30 tests across

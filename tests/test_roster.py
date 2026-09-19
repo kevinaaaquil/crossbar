@@ -80,8 +80,9 @@ class TestRoles:
         assert roster().assigned(Role.CANDIDATE).id == "local-qwen"
         assert roster().assigned(Role.BASELINE).id == "opus"
 
-    def test_at_least_a_candidate_and_a_baseline_are_required(self):
-        with pytest.raises(RosterError, match="baseline"):
+    def test_a_candidate_alone_needs_a_judge(self):
+        """Valid as a single-model run, but only with somebody to grade it."""
+        with pytest.raises(RosterError, match="judge"):
             roster(roles={"candidate": "local-qwen"})
 
     def test_roles_may_not_reference_an_unknown_model(self):
@@ -234,12 +235,12 @@ class TestSingleModelRuns:
     def test_there_is_no_baseline_conflict_to_report(self):
         assert self.single().judge_is_baseline is False
 
-    def test_a_candidate_is_still_required(self):
-        with pytest.raises(RosterError, match="candidate"):
+    def test_a_model_to_test_is_still_required(self):
+        with pytest.raises(RosterError, match="candidate|baseline"):
             parse_roster(
                 {
                     "models": [{"id": "a", "provider": "anthropic", "model": "x"}],
-                    "roles": {"baseline": "a"},
+                    "roles": {"judge": "a"},
                 },
                 source="<test>",
             )
@@ -247,3 +248,65 @@ class TestSingleModelRuns:
     def test_a_two_model_roster_is_unaffected(self):
         assert [r.value for r in roster().execution_roles] == ["candidate", "baseline"]
         assert roster().judge_is_baseline is True
+
+
+class TestSingleModeWithEitherLabel:
+    """Single mode means one executing model. Which role label it carries is
+    the user's choice, not something the machinery should care about."""
+
+    def only_baseline(self):
+        return parse_roster(
+            {
+                "models": [
+                    {"id": "solo", "provider": "anthropic", "model": "x"},
+                    {"id": "grader", "provider": "anthropic", "model": "y"},
+                ],
+                "roles": {"baseline": "solo", "judge": "grader"},
+            },
+            source="<test>",
+        )
+
+    def test_a_baseline_alone_is_a_valid_single_model_run(self):
+        assert self.only_baseline().is_single_model is True
+
+    def test_only_that_model_executes(self):
+        assert [r.value for r in self.only_baseline().execution_roles] == ["baseline"]
+
+    def test_it_is_the_model_under_test(self):
+        assert self.only_baseline().assigned(Role.BASELINE).id == "solo"
+
+    def test_a_judge_is_still_required(self):
+        with pytest.raises(RosterError, match="judge"):
+            parse_roster(
+                {
+                    "models": [{"id": "solo", "provider": "anthropic", "model": "x"}],
+                    "roles": {"baseline": "solo"},
+                },
+                source="<test>",
+            )
+
+    def test_the_solo_model_may_not_judge_itself(self):
+        with pytest.raises(RosterError, match="itself|own"):
+            parse_roster(
+                {
+                    "models": [{"id": "solo", "provider": "anthropic", "model": "x"}],
+                    "roles": {"baseline": "solo", "judge": "solo"},
+                },
+                source="<test>",
+            )
+
+    def test_a_roster_with_no_executing_model_is_rejected(self):
+        with pytest.raises(RosterError, match="candidate|baseline"):
+            parse_roster(
+                {
+                    "models": [{"id": "a", "provider": "anthropic", "model": "x"}],
+                    "roles": {"judge": "a"},
+                },
+                source="<test>",
+            )
+
+    def test_the_model_under_test_is_reachable_without_knowing_its_label(self):
+        assert self.only_baseline().under_test.id == "solo"
+
+    def test_in_a_comparison_the_candidate_is_the_model_under_test(self):
+        assert roster().under_test.id == "local-qwen"

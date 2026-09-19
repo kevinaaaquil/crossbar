@@ -678,3 +678,153 @@ class TestEntryPointWiring:
         (bad / "a.task.yaml").write_text("id: a\nprompt: p\ngolden: g\n")
         with pytest.raises(DomainError, match="telepathy"):
             build_app(roster, [str(bad)], results_dir=str(tmp_path / "runs"))
+
+
+class TestModeToggle:
+    """Switching between assessing one model and comparing two, without
+    editing the roster."""
+
+    def app_for(self, tmp_path, **kwargs):
+        from tests.test_orchestrator import ROSTER, judge, single_task_test, solving_agent
+
+        return CrossbarApp(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent, **kwargs,
+        )
+
+    async def test_a_two_model_roster_starts_in_comparison_mode(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.pause()
+            assert pilot.app.mode == "comparison"
+
+    async def test_m_toggles_to_single(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.press("m")
+            await pilot.pause()
+            assert pilot.app.mode == "single"
+
+    async def test_m_toggles_back(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.press("m")
+            await pilot.press("m")
+            await pilot.pause()
+            assert pilot.app.mode == "comparison"
+
+    async def test_the_mode_is_visible_on_the_models_tab(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.pause()
+            body = str(pilot.app.query_one("#models-body").content).lower()
+            assert "comparison" in body
+            await pilot.press("m")
+            await pilot.pause()
+            body = str(pilot.app.query_one("#models-body").content).lower()
+            assert "single" in body
+
+    async def test_single_mode_runs_only_the_candidate(self, tmp_path):
+        from crossbar.domain import Role
+
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.press("m")
+            await pilot.press("r")
+            while not pilot.app.sweep_done:
+                await pilot.pause()
+                await asyncio.sleep(0.05)
+            assert {a.role for a in pilot.app.result.attempts} == {Role.CANDIDATE}
+
+    async def test_comparison_mode_runs_both(self, tmp_path):
+        from crossbar.domain import Role
+
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.press("r")
+            while not pilot.app.sweep_done:
+                await pilot.pause()
+                await asyncio.sleep(0.05)
+            assert {a.role for a in pilot.app.result.attempts} == {
+                Role.CANDIDATE, Role.BASELINE
+            }
+
+    async def test_single_mode_produces_an_assessment(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.press("m")
+            await pilot.press("r")
+            while not pilot.app.sweep_done:
+                await pilot.pause()
+                await asyncio.sleep(0.05)
+            report = str(pilot.app.query_one("#results-report").content)
+            assert "ASSESSMENT" in report.upper()
+
+    async def test_the_queue_shrinks_in_single_mode(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            await pilot.pause()
+            both = len(pilot.app.orchestrator.queue)
+            await pilot.press("m")
+            await pilot.pause()
+            assert len(pilot.app.orchestrator.queue) == both // 2
+
+    async def test_a_single_model_roster_cannot_toggle(self, tmp_path):
+        """There is no second model to compare against, so the toggle is inert."""
+        from crossbar.roster import parse_roster
+        from tests.test_orchestrator import judge, single_task_test, solving_agent
+
+        solo = parse_roster(
+            {
+                "models": [
+                    {"id": "local", "provider": "openai", "model": "q",
+                     "base_url": "http://localhost:1/v1"},
+                    {"id": "grader", "provider": "anthropic", "model": "big"},
+                ],
+                "roles": {"candidate": "local", "judge": "grader"},
+            },
+            source="<test>",
+        )
+        app = CrossbarApp(
+            roster=solo, tests=[single_task_test()], results_dir=str(tmp_path),
+            judge=judge(), agent_factory=solving_agent,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert pilot.app.mode == "single"
+            await pilot.press("m")
+            await pilot.pause()
+            assert pilot.app.mode == "single", "nothing to compare against"
+
+    async def test_the_toggle_is_refused_while_a_run_is_going(self, tmp_path):
+        async with self.app_for(tmp_path).run_test() as pilot:
+            pilot.app.action_toggle_mode()
+            assert pilot.app.mode == "single"
+            pilot.app.action_run()
+            pilot.app.action_toggle_mode()
+            assert pilot.app.mode == "single", "mode must not change mid-run"
+            while not pilot.app.sweep_done:
+                await pilot.pause()
+                await asyncio.sleep(0.05)
+
+
+class TestConflictWarningFollowsTheMode:
+    """In single mode the baseline judges but never runs, so it is not grading
+    its own work and the screen must not say it is."""
+
+    def test_comparison_mode_warns(self):
+        from crossbar.domain import Role
+        from tests.test_orchestrator import ROSTER
+
+        text = render_roster(ROSTER, "comparison", (Role.CANDIDATE, Role.BASELINE))
+        assert "grade its own" in text
+
+    def test_single_mode_does_not_warn(self):
+        from crossbar.domain import Role
+        from tests.test_orchestrator import ROSTER
+
+        text = render_roster(ROSTER, "single", (Role.CANDIDATE,))
+        assert "grade its own" not in text
+
+    def test_single_mode_says_who_is_judging_and_that_it_does_not_run(self):
+        """Calling the judge 'independent of the baseline' would be false here:
+        it *is* the baseline, it simply is not executing."""
+        from crossbar.domain import Role
+        from tests.test_orchestrator import ROSTER
+
+        text = render_roster(ROSTER, "single", (Role.CANDIDATE,))
+        assert "frontier" in text
+        assert "does not run" in text
+        assert "independent" not in text

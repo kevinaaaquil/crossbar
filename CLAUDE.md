@@ -402,6 +402,27 @@ moment. Build this into the orchestrator from the start; retrofitting a queue
 view onto an event stream means reconstructing state the orchestrator already
 had.
 
+### 2026-09-20 — Mode is chosen at run time, and either label may hold the solo model
+
+**Decided.** Single mode means **one executing model**. Which role label it
+carries — Candidate or Baseline — is the user's choice and the machinery does
+not care. `execution_roles` yields whichever of the two the roster assigns.
+
+**The mode is selectable at run time**, not baked into the roster. The
+orchestrator takes a `roles` override and the TUI toggles it with `m`, so a
+two-model roster can be run either way without editing a file. Narrowing to a
+role the roster does not assign is refused at construction.
+
+**The toggle is refused mid-run.** The queue is already built and half executed;
+changing what it means partway would make the results incomparable.
+
+**A consequence worth knowing:** in single mode with a two-model roster, the
+baseline judges but never executes — so it is *not* grading its own work, and
+the conflict-of-interest warning must not fire. The warning is driven by whether
+the judging model is among the models actually running, not by the roster's
+role assignments. Same class of mistake as the earlier `judge_is_baseline` bug:
+a conflict claimed where none exists misleads exactly as much as one hidden.
+
 ### 2026-09-20 — Single-model runs
 
 **Decided.** A run may have a Candidate and no Baseline: one model assessed on

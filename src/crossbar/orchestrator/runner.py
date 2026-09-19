@@ -29,7 +29,7 @@ from crossbar.judging import (
 )
 from crossbar.orchestrator.queue import QueueItem
 from crossbar.orchestrator.results import Attempt, RunResult, load_run
-from crossbar.roster import Roster, build_provider, cost_usd
+from crossbar.roster import Roster, RosterError, build_provider, cost_usd
 from crossbar.trace import RunStatus, Trajectory
 
 AgentFactory = Callable[[str, Role, Task, int], Any]
@@ -61,8 +61,22 @@ class Orchestrator:
         agent_factory: AgentFactory | None = None,
         on_event: Callable[[RunEvent], None] | None = None,
         judge_tests: int = JUDGE_TESTS_BY_DEFAULT,
+        roles: Sequence[Role] | None = None,
     ) -> None:
         self.roster = roster
+        self.roles = tuple(roles) if roles is not None else roster.execution_roles
+        """Which roles execute. Defaults to everything the roster assigns;
+        narrowing it is how a single-model run is chosen without editing the
+        roster. Validated now rather than mid-run."""
+        unrunnable = [r for r in self.roles if r not in roster.execution_roles]
+        if unrunnable:
+            raise RosterError(
+                "cannot run "
+                + ", ".join(r.value for r in unrunnable)
+                + "; only roles the roster assigns a model to can execute ("
+                + ", ".join(r.value for r in roster.execution_roles)
+                + ")"
+            )
         self.tests = list(tests)
         self.results_dir = Path(results_dir)
         self.judge = judge
@@ -78,7 +92,7 @@ class Orchestrator:
         """Everything that will run, in the order it will run."""
         items: list[QueueItem] = []
         for test in self.tests:
-            for role in self.roster.execution_roles:
+            for role in self.roles:
                 model = self.roster.assigned(role)
                 for task in test.tasks:
                     for repeat in range(test.repeats):
@@ -113,7 +127,7 @@ class Orchestrator:
 
         for test in self.tests:
             plans = self._make_plans(test)
-            for role in self.roster.execution_roles:
+            for role in self.roles:
                 model = self.roster.assigned(role)
                 for task in test.tasks:
                     for repeat in range(test.repeats):
@@ -126,7 +140,12 @@ class Orchestrator:
         result = RunResult(
             run_id=self.run_id,
             attempts=tuple(attempts),
-            roles=dict(self.roster.roles),
+            roles={
+                role.value: self.roster.assigned(role).id
+                for role in (*self.roles, Role.JUDGE)
+                if self.roster.roles.get(role.value)
+                or (role is Role.JUDGE and not self.roster.is_single_model)
+            },
             judged_tests=judged,
             judge_is_baseline=self._judge_is_baseline(),
             started_at=started,

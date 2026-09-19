@@ -388,3 +388,51 @@ class TestJudgeConflictIsEstablishedNotAssumed:
         scripted.model_id = "some-third-model"
         result = orchestrate(tmp_path, judge_obj=scripted).run()
         assert result.judge_is_baseline is False
+
+
+class TestRoleOverride:
+    """The mode can be chosen at run time, so the TUI can toggle between
+    assessing one model and comparing two without editing the roster."""
+
+    def test_by_default_every_assigned_role_runs(self, tmp_path):
+        assert {i.role for i in orchestrate(tmp_path).queue} == {Role.CANDIDATE, Role.BASELINE}
+
+    def test_a_single_role_can_be_selected(self, tmp_path):
+        orchestrator = Orchestrator(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            agent_factory=solving_agent, judge=judge(), roles=(Role.CANDIDATE,),
+        )
+        assert {i.role for i in orchestrator.queue} == {Role.CANDIDATE}
+        assert len(orchestrator.queue) == 1
+
+    def test_only_the_selected_role_actually_runs(self, tmp_path):
+        result = Orchestrator(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            agent_factory=solving_agent, judge=judge(), roles=(Role.CANDIDATE,),
+        ).run()
+        assert {a.role for a in result.attempts} == {Role.CANDIDATE}
+
+    def test_the_baseline_alone_can_be_selected(self, tmp_path):
+        result = Orchestrator(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            agent_factory=solving_agent, judge=judge(), roles=(Role.BASELINE,),
+        ).run()
+        assert {a.model_id for a in result.attempts} == {"frontier"}
+
+    def test_a_single_role_run_analyses_as_a_single_model(self, tmp_path):
+        from crossbar.analysis import analyze
+
+        result = Orchestrator(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            agent_factory=solving_agent, judge=judge(), roles=(Role.CANDIDATE,),
+        ).run()
+        assert analyze(result).is_single_model is True
+
+    def test_an_unassigned_role_is_rejected(self, tmp_path):
+        from crossbar.roster import RosterError
+
+        with pytest.raises(RosterError, match="judge"):
+            Orchestrator(
+                roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+                agent_factory=solving_agent, judge=judge(), roles=(Role.JUDGE,),
+            )

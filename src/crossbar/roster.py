@@ -72,13 +72,31 @@ class Roster:
         return self.model(model_id)
 
     @property
-    def is_single_model(self) -> bool:
-        """No Baseline: one model assessed on its own rather than compared.
+    def execution_roles(self) -> tuple[Role, ...]:
+        """Roles that execute Attempts, in the order they run.
 
-        Answers "is this good enough at all", which is a different and often
+        Whichever of Candidate and Baseline are assigned. Single mode is one of
+        them; which label the user chose is their business, not the machinery's.
+        """
+        return tuple(
+            role
+            for role in (Role.CANDIDATE, Role.BASELINE)
+            if self.roles.get(role.value)
+        )
+
+    @property
+    def is_single_model(self) -> bool:
+        """One model assessed on its own rather than compared.
+
+        Answers "is this good enough at all", which is a different and usually
         earlier question than "is it as good as what we pay for".
         """
-        return not self.roles.get(Role.BASELINE.value)
+        return len(self.execution_roles) == 1
+
+    @property
+    def under_test(self) -> ModelSpec:
+        """The model being assessed, without having to know its label."""
+        return self.assigned(self.execution_roles[0])
 
     @property
     def judge_is_baseline(self) -> bool:
@@ -91,12 +109,7 @@ class Roster:
             return False
         return self.assigned(Role.JUDGE).id == self.assigned(Role.BASELINE).id
 
-    @property
-    def execution_roles(self) -> tuple[Role, ...]:
-        """Roles that execute Attempts, in the order they run."""
-        if self.is_single_model:
-            return (Role.CANDIDATE,)
-        return (Role.CANDIDATE, Role.BASELINE)
+
 
 
 def parse_roster(data: Any, source: str = "<memory>") -> Roster:
@@ -154,9 +167,11 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
         raise RosterError(f"{source}: 'roles' must be a mapping")
     roles = {str(k): str(v) for k, v in roles.items()}
 
-    if not roles.get(Role.CANDIDATE.value):
+    executing = [r for r in (Role.CANDIDATE, Role.BASELINE) if roles.get(r.value)]
+    if not executing:
         raise RosterError(
-            f"{source}: every run needs a candidate; no model is assigned to it"
+            f"{source}: every run needs a model to test; assign one to "
+            "'candidate' or 'baseline'"
         )
 
     known = {m.id for m in models}
@@ -164,20 +179,21 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
         if model_id not in known:
             raise RosterError(f"{source}: role {role!r} references unknown model {model_id!r}")
 
-    if not roles.get(Role.BASELINE.value):
+    if len(executing) == 1:
         # A single-model run has nothing for the judge to fall back to, and a
         # model grading its own work is the one conflict we will not allow
-        # silently -- with a baseline it is at least visible in the report.
+        # silently -- in a comparison it is at least visible in the report.
+        solo = roles[executing[0].value]
         judge = roles.get(Role.JUDGE.value)
         if not judge:
             raise RosterError(
-                f"{source}: without a baseline there is nothing for the judge to fall "
-                "back to, so a judge must be assigned explicitly"
+                f"{source}: a single-model run has nothing for the judge to fall back "
+                "to, so a judge must be assigned explicitly"
             )
-        if judge == roles[Role.CANDIDATE.value]:
+        if judge == solo:
             raise RosterError(
-                f"{source}: the candidate cannot judge itself; assign a different "
-                "model as judge, or add a baseline"
+                f"{source}: {solo!r} cannot judge itself; assign a different model as "
+                "judge, or add a second model to compare against"
             )
 
     return Roster(models=tuple(models), roles=roles, source=source)
