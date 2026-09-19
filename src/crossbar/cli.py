@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -31,9 +32,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     if not getattr(args, "command", None):
         parser.print_usage()
-        print("\nStart with:  crossbar validate     then:  crossbar run")
+        print("\nStart with:  crossbar init      then:  crossbar validate")
         return 2
-    return args.handler(args)
+
+    try:
+        return args.handler(args)
+    except Exception as exc:
+        # A stack trace is a bug report, not a user interface. The trace is
+        # still one environment variable away when it is actually wanted.
+        if os.environ.get("CROSSBAR_TRACEBACK"):
+            raise
+        print(f"error: {exc}")
+        print("\nSet CROSSBAR_TRACEBACK=1 to see the full trace.")
+        return 1
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -311,9 +322,23 @@ def _cmd_init(args) -> int:
 
 
 def _cmd_tui(args) -> int:
-    from crossbar.tui import run_app
+    from crossbar.tui import CrossbarApp
 
-    return run_app(roster_path=args.roster, test_paths=args.tests or [])
+    loaded = _load(args)
+    if loaded is None:
+        return 1
+    roster, tests = loaded
+
+    project = getattr(args, "project", None)
+    judge_model = roster.assigned(Role.JUDGE)
+    CrossbarApp(
+        roster=roster,
+        tests=tests,
+        results_dir=str(project.results_dir) if project else "runs",
+        judge=Judge(build_provider(judge_model), model_id=judge_model.id),
+        judge_tests=project.judge_tests if project else 1,
+    ).run()
+    return 0
 
 
 # -- helpers ---------------------------------------------------------------

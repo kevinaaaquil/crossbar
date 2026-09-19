@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from crossbar.cli import main
+from crossbar.domain import Role
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_TEST = str(ROOT / "tests" / "fixtures" / "tests" / "support-triage")
@@ -375,3 +376,89 @@ class TestProjectFolderCommands:
         capsys.readouterr()
         cli(["run", "--repeats", "1", "--no-judge", "--skip-preflight"], capsys)
         assert (tmp_path / ".crossbar" / "runs" / "run.json").exists()
+
+
+class TestTuiCommand:
+    """`crossbar tui` must go through the same project loading as everything
+    else. It did not, and typing it in a directory with no project produced a
+    raw TypeError traceback."""
+
+    def test_tui_outside_a_project_fails_cleanly(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        code, out = cli(["tui"], capsys)
+        assert code != 0
+        assert "crossbar init" in out
+        assert "Traceback" not in out
+
+    def test_tui_builds_the_app_from_the_project(self, capsys, tmp_path, monkeypatch):
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+
+        code, _ = cli(["tui"], capsys)
+        assert code == 0
+        assert [t.name for t in built["app"].tests] == ["Support triage"]
+        assert built["app"].roster.assigned(Role.CANDIDATE).id == "my-model"
+
+    def test_the_tui_gets_a_judge(self, capsys, tmp_path, monkeypatch):
+        from crossbar.judging import Judge
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        cli(["tui"], capsys)
+        assert isinstance(built["app"].judge, Judge)
+
+    def test_the_tui_writes_into_the_project(self, capsys, tmp_path, monkeypatch):
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        cli(["tui"], capsys)
+        assert ".crossbar" in built["app"].results_dir
+
+    def test_explicit_flags_still_work(self, capsys, tmp_path, roster_file, monkeypatch):
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+        monkeypatch.chdir(tmp_path)
+        cli(["tui", "--roster", roster_file, "--test", FIXTURE_TEST], capsys)
+        assert built["app"].roster.assigned(Role.CANDIDATE).id == "local"
+
+
+class TestUnexpectedErrors:
+    """A stack trace is a bug report, not a user interface."""
+
+    def test_an_unexpected_failure_prints_a_message_not_a_traceback(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        import crossbar.cli as cli_module
+
+        monkeypatch.setattr(
+            cli_module, "_cmd_doctor", lambda args: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        code, out = cli(["doctor"], capsys)
+        assert code != 0
+        assert "boom" in out
+        assert "Traceback" not in out
+
+    def test_the_traceback_is_available_when_asked_for(self, capsys, monkeypatch):
+        import crossbar.cli as cli_module
+
+        monkeypatch.setenv("CROSSBAR_TRACEBACK", "1")
+        monkeypatch.setattr(
+            cli_module, "_cmd_doctor", lambda args: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        with pytest.raises(RuntimeError):
+            main(["doctor"])
