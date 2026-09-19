@@ -399,6 +399,27 @@ moment. Build this into the orchestrator from the start; retrofitting a queue
 view onto an event stream means reconstructing state the orchestrator already
 had.
 
+### 2026-09-19 — Every run checks itself before it spends anything
+
+**Decided.** `crossbar run` performs pre-flight checks automatically, even when
+the user has already run `validate` and `doctor` themselves. A run costs money,
+and the expensive failures are cheap to predict.
+
+`validate`, `doctor` and `run` all call the same `crossbar.preflight` module, so
+the three cannot drift into disagreeing about whether a setup is sound.
+
+**What it checks:** roles assigned, API keys present, whether the judge is the
+baseline, docker present when a Test needs it, and — the valuable one — whether
+each Test's **Environment actually starts** and offers at least one read-only
+probe. An MCP server that will not launch fails every Attempt, and an
+Environment that can show nothing back makes every Attempt `Unchecked`. Both are
+knowable in seconds.
+
+**Failures block; warnings do not.** A missing key or an Environment that will
+not start stops the run with a non-zero exit and nothing spent. A judge that is
+also the baseline, or a Test with no probes, is the user's call. `--skip-preflight`
+exists for when someone knows better.
+
 ### 2026-09-18 — Licence: PolyForm Noncommercial 1.0.0
 
 Noncommercial use free, including charities/schools/public bodies. Commercial

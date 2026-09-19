@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 515
+**Total tests:** 545
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -251,6 +251,18 @@ says the user must be *asked* how many Tests to judge when more than one is
 scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
+
+### Pre-flight — done
+`crossbar.preflight`, shared by `validate`, `doctor` and `run` so the three
+cannot disagree. 22 tests.
+
+Checks roles, keys, judge independence, docker, and — the valuable part —
+actually starts each Test's Environment to confirm the servers launch and that
+at least one read-only probe exists. A server that will not launch fails every
+Attempt; an Environment with no probes makes every Attempt Unchecked. Both are
+knowable in seconds and expensive to discover afterwards.
+
+Failures block a run with nothing spent; warnings print and continue.
 
 ### Demo command — done
 `crossbar demo` runs the shipped example with two scripted stand-in models and a

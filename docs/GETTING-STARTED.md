@@ -129,8 +129,12 @@ means and crossbar works out what to inspect.
 .venv/bin/crossbar validate --test my-test
 ```
 
-Prints the roles, every Task, the total number of attempts, and a warning if the
-baseline is also the judge. Typos surface here, not halfway through a paid run.
+Prints the roles, every Task, the total number of attempts, and a pre-flight
+report: are the keys set, does each environment actually start, can anything be
+read back. Typos surface here, not halfway through a paid run.
+
+`crossbar run` does the same checks itself before it starts, so you cannot
+forget. Failures stop it with nothing spent.
 
 ## 6. Run it
 

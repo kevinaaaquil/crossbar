@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_TEST = str(ROOT / "tests" / "fixtures" / "tests" / "support-triage")
 
 
+@pytest.fixture(autouse=True)
+def _dummy_key(monkeypatch):
+    """Most tests need a key present; the ones about missing keys delete it."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+
 @pytest.fixture
 def roster_file(tmp_path):
     path = tmp_path / "roster.yaml"
@@ -23,6 +29,7 @@ def roster_file(tmp_path):
         "  - id: frontier\n"
         "    provider: anthropic\n"
         "    model: big\n"
+        "    api_key_env: ANTHROPIC_API_KEY\n"
         "    price: {input_per_mtok: 10.0, output_per_mtok: 20.0}\n"
         "roles:\n"
         "  candidate: local\n"
@@ -202,3 +209,90 @@ class TestRun:
         data = json.loads((tmp_path / "runs" / "run.json").read_text())
         assert len(data["attempts"]) == 4
         assert all(a["error"] for a in data["attempts"])
+
+
+class TestPreflightOnRun:
+    """A run costs money, so it checks itself before committing to one."""
+
+    def broken_test(self, tmp_path):
+        directory = tmp_path / "broken-env"
+        directory.mkdir()
+        (directory / "test.yaml").write_text("name: Broken\nenvironment: env.yaml\n")
+        (directory / "env.yaml").write_text(
+            "kind: local\nconnectors:\n  mcp:\n    servers:\n"
+            "      - name: x\n        command: no-such-binary-xyz\n"
+        )
+        (directory / "a.task.yaml").write_text("id: a\nprompt: p\ngolden: g\n")
+        return str(directory)
+
+    def test_run_reports_its_preflight(self, capsys, roster_file, tmp_path, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        code, out = cli(
+            ["run", "--roster", roster_file, "--test", FIXTURE_TEST,
+             "--out", str(tmp_path / "runs"), "--repeats", "1", "--no-judge"],
+            capsys,
+        )
+        assert "PRE-FLIGHT" in out.upper()
+
+    def test_a_broken_environment_stops_the_run_before_it_starts(
+        self, capsys, roster_file, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        out_dir = tmp_path / "runs"
+        code, out = cli(
+            ["run", "--roster", roster_file, "--test", self.broken_test(tmp_path),
+             "--out", str(out_dir)],
+            capsys,
+        )
+        assert code != 0
+        assert "FAIL" in out.upper()
+        assert not (out_dir / "run.json").exists(), "nothing should have been spent"
+
+    def test_a_missing_key_stops_the_run(self, capsys, roster_file, tmp_path, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        out_dir = tmp_path / "runs"
+        code, out = cli(
+            ["run", "--roster", roster_file, "--test", FIXTURE_TEST, "--out", str(out_dir)],
+            capsys,
+        )
+        assert code != 0
+        assert "ANTHROPIC_API_KEY" in out
+
+    def test_warnings_do_not_stop_a_run(self, capsys, roster_file, tmp_path, monkeypatch):
+        """The baseline judging itself is the user's call, not a blocker."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        code, out = cli(
+            ["run", "--roster", roster_file, "--test", FIXTURE_TEST,
+             "--out", str(tmp_path / "runs"), "--repeats", "1", "--no-judge"],
+            capsys,
+        )
+        assert code == 0
+        assert "WARN" in out.upper()
+
+    def test_preflight_can_be_skipped(self, capsys, roster_file, tmp_path, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        code, out = cli(
+            ["run", "--roster", roster_file, "--test", FIXTURE_TEST,
+             "--out", str(tmp_path / "runs"), "--repeats", "1", "--no-judge",
+             "--skip-preflight"],
+            capsys,
+        )
+        assert code == 0
+        assert "PRE-FLIGHT" not in out.upper()
+
+    def test_validate_runs_the_same_checks(self, capsys, roster_file, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        code, out = cli(["validate", "--roster", roster_file, "--test", FIXTURE_TEST], capsys)
+        assert code == 0
+        assert "PRE-FLIGHT" in out.upper()
+
+    def test_validate_fails_on_a_broken_environment(self, capsys, roster_file, tmp_path):
+        code, out = cli(
+            ["validate", "--roster", roster_file, "--test", self.broken_test(tmp_path)], capsys
+        )
+        assert code != 0
+
+    def test_doctor_reports_the_same_model_key_state(self, capsys, roster_file, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        _, out = cli(["doctor", "--roster", roster_file], capsys)
+        assert "ANTHROPIC_API_KEY" in out

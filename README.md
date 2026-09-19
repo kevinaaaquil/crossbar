@@ -213,12 +213,28 @@ is reported without an interval.
 | Command | Does |
 |---|---|
 | `crossbar validate` | Check the roster and tests before spending anything |
-| `crossbar run` | Run, judge, and print the verdict |
+| `crossbar run` | Pre-flight, then run, judge, and print the verdict |
 | `crossbar judge <run>` | Judge a stored run without re-running it |
 | `crossbar report <run>` | Render a stored run (`--json` for machines) |
 | `crossbar dump <run>` | Zip a run for review |
 | `crossbar doctor` | Check Python, Docker, connectors and your keys |
 | `crossbar tui` | The interactive terminal app |
+
+## Every run checks itself first
+
+`crossbar run` performs the same checks `validate` does before it commits to
+anything, even if you just ran `validate` yourself. It confirms the roles are
+assigned, the keys are set, docker is there if a Test needs it, and — the one
+that matters — that each Test's environment **actually starts** and offers at
+least one read-only probe.
+
+An MCP server that will not launch fails every attempt. An environment that can
+show nothing back makes every attempt `Unchecked`. Both cost seconds to detect
+and real money to discover afterwards.
+
+Failures stop the run with nothing spent. Warnings — the baseline doubling as
+judge, a test with no probes — are printed and the run continues, because those
+are your call. `--skip-preflight` is there when you know better.
 
 ## The terminal app
 

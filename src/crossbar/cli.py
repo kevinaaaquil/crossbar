@@ -18,6 +18,7 @@ from crossbar.domain import DomainError, Role, load_test
 from crossbar.dump import DumpError, create_dump
 from crossbar.judging import Judge
 from crossbar.orchestrator import Orchestrator, RunEvent, load_run
+from crossbar.preflight import Status, preflight, render_preflight
 from crossbar.report import render_report, write_markdown
 from crossbar.roster import Roster, RosterError, build_provider, load_roster
 
@@ -53,6 +54,8 @@ def _parser() -> argparse.ArgumentParser:
                      help="how many Tests to judge (judging is the expensive part)")
     run.add_argument("--no-judge", action="store_true", help="execute without judging")
     run.add_argument("--quiet", action="store_true")
+    run.add_argument("--skip-preflight", action="store_true",
+                     help="start without checking the setup first")
     run.set_defaults(handler=_cmd_run)
 
     judge = sub.add_parser("judge", help="judge a stored run without re-running it")
@@ -116,17 +119,18 @@ def _cmd_validate(args) -> int:
         print("  attempts. They are blinded, but connect a separate judge before")
         print("  relying on this for a decision.")
 
-    total = 0
     print()
     for test in tests:
         attempts = len(test.tasks) * test.repeats * len(roster.execution_roles)
-        total += attempts
         print(f"Test     {test.name}: {len(test.tasks)} tasks x {test.repeats} repeats "
               f"= {attempts} attempts")
         for task in test.tasks:
             print(f"  - {task.id}")
-    print(f"\nTotal    {total} attempts")
-    return 0
+
+    print()
+    report = preflight(roster, tests)
+    print(render_preflight(report))
+    return 0 if report.ok else 1
 
 
 def _cmd_run(args) -> int:
@@ -137,6 +141,15 @@ def _cmd_run(args) -> int:
 
     if args.repeats:
         tests = [_with_repeats(t, args.repeats) for t in tests]
+
+    # A run costs money. Check what is cheap to check before committing to it,
+    # even if the user has already run validate themselves.
+    if not args.skip_preflight:
+        report = preflight(roster, tests)
+        print(render_preflight(report))
+        print()
+        if not report.ok:
+            return 1
 
     # Even with --no-judge we still build the judge, because the Check Plan is
     # what tells us which evidence to capture. Skip it and the run cannot be
@@ -232,6 +245,13 @@ def _cmd_doctor(args) -> int:
         else:
             state = "no api_key_env set (fine if the endpoint needs no key)"
         print(f"    - {model.id:<20} {state}")
+
+    # The same checks a run would make, minus anything needing a Test.
+    print()
+    report = preflight(roster, [], start_environments=False)
+    for check in report.checks:
+        if check.status is not Status.OK:
+            print(f"  [{check.status.value.upper()}] {check.name}: {check.detail}")
     return 0
 
 
