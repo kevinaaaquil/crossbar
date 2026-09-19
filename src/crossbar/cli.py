@@ -20,7 +20,13 @@ from crossbar.dump import DumpError, create_dump
 from crossbar.judging import Judge
 from crossbar.orchestrator import Orchestrator, RunEvent, load_run
 from crossbar.preflight import Status, preflight, render_preflight
-from crossbar.project import PROJECT_DIR, ProjectError, init_project, load_project
+from crossbar.project import (
+    CONFIG_NAME as PROJECT_CONFIG,
+    PROJECT_DIR,
+    ProjectError,
+    init_project,
+    load_project,
+)
 from crossbar.report import render_report, write_markdown
 from crossbar.roster import Roster, RosterError, build_provider, load_roster
 
@@ -339,6 +345,10 @@ def _cmd_tui(args) -> int:
         results_dir=str(project.results_dir) if project else "runs",
         judge=Judge(build_provider(judge_model), model_id=judge_model.id),
         judge_tests=project.judge_tests if project else 1,
+        # Setup writes a file, so it must target the project this app was
+        # opened with -- not whichever .crossbar happens to sit above the
+        # working directory.
+        config_path=(project.root / PROJECT_CONFIG) if project else None,
     ).run()
     return 0
 

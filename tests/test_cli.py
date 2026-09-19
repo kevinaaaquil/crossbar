@@ -477,3 +477,48 @@ class TestValidateNamesItsSource:
         monkeypatch.chdir(tmp_path)
         _, out = cli(["validate", "--roster", roster_file, "--test", FIXTURE_TEST], capsys)
         assert "roster.yaml" in out
+
+
+class TestTuiEditsTheProjectItOpened:
+    """Setup writes a config file. It must be the project the app was opened
+    with, not whatever .crossbar happens to sit above the working directory."""
+
+    def test_the_config_path_comes_from_the_loaded_project(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+
+        project = tmp_path / "work"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        cli(["init"], capsys)
+        capsys.readouterr()
+
+        cli(["tui"], capsys)
+        assert built["app"].config_path == project / ".crossbar" / "config.yaml"
+
+    def test_it_does_not_pick_up_a_project_from_a_parent_directory(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        """Two projects nested: opening the inner one must not edit the outer."""
+        from crossbar.tui import CrossbarApp
+
+        built = {}
+        monkeypatch.setattr(CrossbarApp, "run", lambda self, *a, **k: built.update(app=self))
+
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        monkeypatch.chdir(outer)
+        cli(["init"], capsys)
+
+        inner = outer / "inner"
+        inner.mkdir()
+        monkeypatch.chdir(inner)
+        cli(["init"], capsys)
+        capsys.readouterr()
+
+        cli(["tui"], capsys)
+        assert built["app"].config_path == inner / ".crossbar" / "config.yaml"

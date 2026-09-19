@@ -399,6 +399,7 @@ def build_app(
     results_dir: str | None = None,
     judge: Any = None,
     judge_tests: int = 1,
+    config_path: str | Path | None = None,
 ) -> CrossbarApp:
     """Load a roster and some Tests from disk and wire up the app.
 
@@ -418,6 +419,7 @@ def build_app(
         results_dir=target,
         judge=judge,
         judge_tests=judge_tests,
+        config_path=config_path,
     )
 
 

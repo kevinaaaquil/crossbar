@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 649
+**Total tests:** 790
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -252,6 +252,21 @@ scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
 
+### Config builder and Setup screen — done
+`crossbar.configwriter` turns choices into `.crossbar/config.yaml`, and a Setup
+tab (`s`, or `ctrl+p` → "setup") drives it. 80 tests across the two.
+
+The file stays the source of truth: a round-trip test writes a config, reads it
+back into a draft, rewrites it, and asserts the bytes are identical — so the UI
+and hand-editing cannot drift into producing something the other fails to read.
+Presets carry the fiddly parts so the only thing left to type is the model name.
+
+Found while verifying: the app was rediscovering the project from the working
+directory rather than using the one it was opened with, so Setup could have
+written config into a *different* project — a nested one would have edited the
+outer. The config path is now passed explicitly from the CLI, with a test using
+two nested projects.
+
 ### Packaging and the project folder — done
 crossbar is installed, not cloned. 27 tests.
 
@@ -325,6 +340,10 @@ demo claimed the baseline had graded its own work when a separate judge had.
 
 Notes that do not belong in the design doc but should not be lost.
 
+- **`Static.content` cannot detect a markup bug.** It returns the raw string
+  whatever the markup mode, so only an actual render raises. And a `TabPane`
+  that was never opened never lays out, so a bracket test has to switch to the
+  tab first or the `MarkupError` never fires.
 - **The Textual markup trap is sharper than it looks.** `Static.content` returns
   the raw string you passed in, not parsed markup, so a test asserting on
   `.content` passes whether markup is on or off — only rendering raises. Nor are
