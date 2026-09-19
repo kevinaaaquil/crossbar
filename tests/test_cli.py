@@ -462,3 +462,18 @@ class TestUnexpectedErrors:
         )
         with pytest.raises(RuntimeError):
             main(["doctor"])
+
+
+class TestValidateNamesItsSource:
+    def test_it_names_the_project_config_it_loaded(self, capsys, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        _, out = cli(["validate"], capsys)
+        assert "config.yaml" in out
+        assert "None" not in out.splitlines()[0]
+
+    def test_it_names_an_explicit_roster_file(self, capsys, roster_file, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        _, out = cli(["validate", "--roster", roster_file, "--test", FIXTURE_TEST], capsys)
+        assert "roster.yaml" in out

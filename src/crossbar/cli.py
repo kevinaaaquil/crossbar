@@ -127,7 +127,9 @@ def _cmd_validate(args) -> int:
         return 1
     roster, tests = loaded
 
-    print(f"Roster   {args.roster}")
+    project = getattr(args, "project", None)
+    source = str(project.root / "config.yaml") if project else args.roster
+    print(f"Config   {source}")
     roles = (Role.CANDIDATE, Role.JUDGE) if roster.is_single_model else (
         Role.CANDIDATE, Role.BASELINE, Role.JUDGE
     )
