@@ -264,3 +264,79 @@ class TestDeferredJudging:
         rejudged = Orchestrator.judge_stored(tmp_path, judge=judge)
         assert judge.plans_made == 0, "re-judging must reuse the stored plan"
         assert all(a.judgement.outcome is Outcome.GRADED for a in rejudged.attempts)
+
+
+SINGLE_ROSTER = parse_roster(
+    {
+        "models": [
+            {"id": "my-model", "provider": "openai", "model": "qwen",
+             "base_url": "http://localhost:1/v1",
+             "price": {"input_per_mtok": 0.2, "output_per_mtok": 0.6}},
+            {"id": "grader", "provider": "anthropic", "model": "big"},
+        ],
+        "roles": {"candidate": "my-model", "judge": "grader"},
+    },
+    source="<test>",
+)
+
+
+@pytest.fixture(scope="module")
+def finished_single(tmp_path_factory):
+    """One single-model run, shared across the assertions below."""
+    results = tmp_path_factory.mktemp("single")
+    test = load_test(EXAMPLE, known_connectors=known_connectors())
+    trimmed = type(test)(
+        name=test.name, tasks=test.tasks, environment=test.environment,
+        description=test.description, repeats=1, path=test.path,
+    )
+    orchestrator = Orchestrator(
+        roster=SINGLE_ROSTER, tests=[trimmed], results_dir=str(results),
+        agent_factory=agent_factory, judge=StateCheckingJudge(),
+    )
+    return orchestrator.run(), results
+
+
+class TestSingleModelRunEndToEnd:
+    """One model assessed on its own, all the way through."""
+
+    def test_only_the_candidate_runs(self, finished_single):
+        result, _ = finished_single
+        assert len(result.attempts) == 4  # 4 tasks x 1 repeat x 1 role
+        assert {a.role for a in result.attempts} == {Role.CANDIDATE}
+
+    def test_every_attempt_is_graded(self, finished_single):
+        result, _ = finished_single
+        assert all(a.judgement.outcome is Outcome.GRADED for a in result.attempts)
+        assert all(a.judgement.passed for a in result.attempts)
+
+    def test_the_analysis_has_no_comparison(self, finished_single):
+        result, _ = finished_single
+        analysis = analyze(result)
+        assert analysis.is_single_model is True
+        assert analysis.comparison is None
+        assert analysis.model("my-model").pass_rate == 1.0
+
+    def test_the_report_is_an_assessment(self, finished_single):
+        result, _ = finished_single
+        report = render_report(analyze(result))
+        assert "ASSESSMENT" in report.upper()
+        assert "my-model" in report
+
+    def test_the_run_reloads(self, finished_single):
+        _, results = finished_single
+        restored = load_run(results / "run.json")
+        assert len(restored.attempts) == 4
+        assert analyze(restored).is_single_model is True
+
+    def test_the_queue_only_plans_one_role(self, tmp_path):
+        test = load_test(EXAMPLE, known_connectors=known_connectors())
+        one = type(test)(
+            name=test.name, tasks=(test.task("escalate-outage"),),
+            environment=test.environment, repeats=2, path=test.path,
+        )
+        orchestrator = Orchestrator(
+            roster=SINGLE_ROSTER, tests=[one], results_dir=str(tmp_path),
+            agent_factory=agent_factory, judge=StateCheckingJudge(),
+        )
+        assert len(orchestrator.queue) == 2
+        assert {i.role for i in orchestrator.queue} == {Role.CANDIDATE}

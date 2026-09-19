@@ -16,6 +16,9 @@ WIDTH = 78
 
 
 def render_verdict(analysis: Analysis) -> str:
+    if analysis.is_single_model:
+        return _render_assessment(analysis)
+
     verdict = analysis.verdict
     comparison = analysis.comparison
     lines = [
@@ -57,6 +60,57 @@ def render_verdict(analysis: Analysis) -> str:
     lines.append("")
     lines.extend(_wrap(f"{verdict.confidence.title()}. {verdict.confidence_note}", "  CONFIDENCE  "))
 
+    for index, caveat in enumerate(verdict.caveats):
+        lines.append("")
+        lines.extend(_wrap(caveat, "  CAVEAT      " if index == 0 else "              "))
+    return "\n".join(lines)
+
+
+def _render_assessment(analysis: Analysis) -> str:
+    """One model, assessed on its own.
+
+    No comparison exists, so none of the comparison language belongs here — a
+    "difference" or a "saving" against nothing is meaningless, and printing it
+    anyway would invite the reader to infer one.
+    """
+    verdict = analysis.verdict
+    lines = [
+        f"CROSSBAR ASSESSMENT{' ' * 27}{len(analysis.task_ids)} tasks judged",
+        "",
+    ]
+    for summary in analysis.models:
+        rate = "n/a" if summary.pass_rate is None else f"{summary.pass_rate * 100:.1f}% pass"
+        interval = (
+            ""
+            if summary.pass_rate is None
+            else f"  [{summary.ci_low * 100:.1f} - {summary.ci_high * 100:.1f}]"
+        )
+        lines.append(f"  MODEL      {summary.model_id}")
+        lines.append(f"             {rate}{interval}")
+        lines.append(
+            f"             {summary.n_graded} graded · {summary.n_unchecked} unchecked · "
+            f"{summary.n_failed} failed"
+        )
+        per_success = (
+            f"${summary.cost_per_success:,.2f} per success"
+            if summary.cost_per_success is not None
+            else "no successes, so no cost per success"
+        )
+        lines.append(f"             ${summary.total_cost:,.2f} over this run, {per_success}")
+        lines.append("")
+
+    lines.extend(
+        _wrap(f"{verdict.confidence.title()}. {verdict.confidence_note}", "  CONFIDENCE  ")
+    )
+    lines.append("")
+    lines.extend(
+        _wrap(
+            "This model was assessed on its own. Assign a second model to compare "
+            "against, and the report will say whether the gap between them is real "
+            "or just noise.",
+            "  NOTE        ",
+        )
+    )
     for index, caveat in enumerate(verdict.caveats):
         lines.append("")
         lines.extend(_wrap(caveat, "  CAVEAT      " if index == 0 else "              "))

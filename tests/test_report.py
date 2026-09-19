@@ -113,3 +113,60 @@ class TestFullReport:
             judged=(),
         ))
         assert "nothing" in render_report(result).lower() or "no judged" in render_report(result).lower()
+
+
+from tests.test_analysis import single as single_run
+
+
+def single_analysis(scores, **kwargs):
+    return analyze(single_run(scores, **kwargs))
+
+
+class TestSingleModelReport:
+    """With one model there is no decision between options, so the card states
+    how it did rather than whether to switch."""
+
+    def test_it_is_headed_as_an_assessment_not_a_verdict(self):
+        text = render_verdict(single_analysis([1, 1, 0]))
+        assert "ASSESSMENT" in text.upper()
+
+    def test_it_names_the_model_and_its_pass_rate(self):
+        text = render_verdict(single_analysis([1, 1, 0]))
+        assert "local" in text
+        assert "66.7%" in text or "67" in text
+
+    def test_the_interval_is_shown(self):
+        text = render_verdict(single_analysis([1, 1, 0, 1]))
+        assert "[" in text and "]" in text
+
+    def test_no_comparison_language_appears(self):
+        text = render_verdict(single_analysis([1, 1, 0])).lower()
+        for word in ("baseline", "switch", "savings", "difference", "vs "):
+            assert word not in text, f"{word!r} has no meaning without a second model"
+
+    def test_the_cost_per_success_is_stated(self):
+        text = render_verdict(single_analysis([1, 1, 0, 0], cost=2.0))
+        assert "success" in text.lower()
+
+    def test_confidence_is_still_reported(self):
+        assert "CONFIDENCE" in render_verdict(single_analysis([1, 1])).upper()
+
+    def test_it_says_a_baseline_would_make_it_a_comparison(self):
+        text = render_verdict(single_analysis([1, 1])).lower()
+        assert "baseline" not in text
+        assert "compare" in text or "on its own" in text
+
+    def test_the_model_table_still_renders(self):
+        assert "local" in render_models(single_analysis([1, 1, 0]))
+
+    def test_the_full_report_renders(self):
+        text = render_report(single_analysis([1, 1, 0]))
+        assert "ASSESSMENT" in text.upper()
+        assert "local" in text
+
+    def test_every_line_fits_a_terminal(self):
+        for line in render_verdict(single_analysis([1, 1, 0])).splitlines():
+            assert len(line) <= 100
+
+    def test_a_two_model_report_is_unaffected(self):
+        assert "VERDICT" in render_verdict(analysis(*TIED)).upper()

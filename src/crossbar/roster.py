@@ -72,17 +72,30 @@ class Roster:
         return self.model(model_id)
 
     @property
+    def is_single_model(self) -> bool:
+        """No Baseline: one model assessed on its own rather than compared.
+
+        Answers "is this good enough at all", which is a different and often
+        earlier question than "is it as good as what we pay for".
+        """
+        return not self.roles.get(Role.BASELINE.value)
+
+    @property
     def judge_is_baseline(self) -> bool:
         """True when the Baseline is grading its own Attempts.
 
         A structural conflict of interest. Blinding is the mitigation, but the
-        report still has to say so.
+        report still has to say so. Never true without a Baseline.
         """
+        if self.is_single_model:
+            return False
         return self.assigned(Role.JUDGE).id == self.assigned(Role.BASELINE).id
 
     @property
     def execution_roles(self) -> tuple[Role, ...]:
         """Roles that execute Attempts, in the order they run."""
+        if self.is_single_model:
+            return (Role.CANDIDATE,)
         return (Role.CANDIDATE, Role.BASELINE)
 
 
@@ -141,16 +154,31 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
         raise RosterError(f"{source}: 'roles' must be a mapping")
     roles = {str(k): str(v) for k, v in roles.items()}
 
-    for required in (Role.CANDIDATE, Role.BASELINE):
-        if not roles.get(required.value):
-            raise RosterError(
-                f"{source}: a run needs at least a candidate and a baseline; "
-                f"no model is assigned to {required.value!r}"
-            )
+    if not roles.get(Role.CANDIDATE.value):
+        raise RosterError(
+            f"{source}: every run needs a candidate; no model is assigned to it"
+        )
+
     known = {m.id for m in models}
     for role, model_id in roles.items():
         if model_id not in known:
             raise RosterError(f"{source}: role {role!r} references unknown model {model_id!r}")
+
+    if not roles.get(Role.BASELINE.value):
+        # A single-model run has nothing for the judge to fall back to, and a
+        # model grading its own work is the one conflict we will not allow
+        # silently -- with a baseline it is at least visible in the report.
+        judge = roles.get(Role.JUDGE.value)
+        if not judge:
+            raise RosterError(
+                f"{source}: without a baseline there is nothing for the judge to fall "
+                "back to, so a judge must be assigned explicitly"
+            )
+        if judge == roles[Role.CANDIDATE.value]:
+            raise RosterError(
+                f"{source}: the candidate cannot judge itself; assign a different "
+                "model as judge, or add a baseline"
+            )
 
     return Roster(models=tuple(models), roles=roles, source=source)
 

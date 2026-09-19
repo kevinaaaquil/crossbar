@@ -214,3 +214,58 @@ class TestCaveats:
 
     def test_a_clean_run_has_no_caveats(self):
         assert analyze(paired([1] * 200, [1] * 200)).verdict.caveats == ()
+
+
+def single(scores, cost=1.0, **kwargs):
+    attempts = [
+        attempt("local", f"t{i}", 0, score=s, cost=cost, **kwargs) for i, s in enumerate(scores)
+    ]
+    return RunResult(
+        run_id="r",
+        attempts=tuple(attempts),
+        roles={"candidate": "local", "judge": "grader"},
+        judged_tests=("T",),
+    )
+
+
+class TestSingleModelAssessment:
+    """One model on its own: how did it do, not whether to switch."""
+
+    def test_the_one_model_is_summarised(self):
+        result = analyze(single([1, 1, 0]))
+        assert [m.model_id for m in result.models] == ["local"]
+        assert result.model("local").pass_rate == pytest.approx(2 / 3)
+
+    def test_there_is_no_comparison(self):
+        assert analyze(single([1, 1, 0])).comparison is None
+
+    def test_it_is_flagged_as_a_single_model_run(self):
+        assert analyze(single([1, 1])).is_single_model is True
+        assert analyze(paired([1, 1], [1, 1])).is_single_model is False
+
+    def test_no_switch_is_recommended(self):
+        verdict = analyze(single([1, 1, 1])).verdict
+        assert verdict.recommend_switch is False
+        assert verdict.savings_usd == 0.0
+
+    def test_an_interval_is_still_reported(self):
+        summary = analyze(single([1, 1, 0, 1])).model("local")
+        assert summary.ci_low <= summary.pass_rate <= summary.ci_high
+
+    def test_cost_per_success_is_still_reported(self):
+        assert analyze(single([1, 1, 0, 0], cost=2.0)).model("local").cost_per_success == (
+            pytest.approx(4.0)
+        )
+
+    def test_confidence_still_reflects_the_task_count(self):
+        assert analyze(single([1] * 4)).verdict.confidence == "low"
+        assert analyze(single([1] * 200)).verdict.confidence == "high"
+
+    def test_unchecked_attempts_are_still_excluded(self):
+        result = analyze(single([1, 1], outcome=Outcome.UNCHECKED))
+        assert result.model("local").pass_rate is None
+        assert result.model("local").n_unchecked == 2
+
+    def test_no_judge_conflict_is_claimed(self):
+        caveats = " ".join(analyze(single([1, 1])).verdict.caveats).lower()
+        assert "graded its own" not in caveats

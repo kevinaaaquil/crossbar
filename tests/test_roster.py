@@ -176,3 +176,74 @@ class TestLoadingFromDisk:
         path.write_text("roles: {}\n")
         with pytest.raises(RosterError, match="model"):
             load_roster(path)
+
+
+class TestSingleModelRuns:
+    """Evaluating one model on its own: is it good enough at all, before
+    asking whether it is as good as something else."""
+
+    def single(self, **overrides):
+        data = {
+            "models": [
+                {"id": "local", "provider": "openai", "model": "q",
+                 "base_url": "http://localhost:1/v1"},
+                {"id": "grader", "provider": "anthropic", "model": "big"},
+            ],
+            "roles": {"candidate": "local", "judge": "grader"},
+        }
+        data.update(overrides)
+        return parse_roster(data, source="<test>")
+
+    def test_a_candidate_and_a_judge_is_enough(self):
+        assert self.single().assigned(Role.CANDIDATE).id == "local"
+
+    def test_it_is_flagged_as_a_single_model_run(self):
+        assert self.single().is_single_model is True
+        assert roster().is_single_model is False
+
+    def test_only_the_candidate_executes(self):
+        assert [r.value for r in self.single().execution_roles] == ["candidate"]
+
+    def test_there_is_no_baseline(self):
+        with pytest.raises(RosterError, match="baseline"):
+            self.single().assigned(Role.BASELINE)
+
+    def test_a_judge_must_be_named_when_there_is_no_baseline(self):
+        """Nothing to fall back to, and the candidate must not grade itself."""
+        with pytest.raises(RosterError, match="judge"):
+            parse_roster(
+                {
+                    "models": [{"id": "local", "provider": "openai", "model": "q",
+                                "base_url": "http://localhost:1/v1"}],
+                    "roles": {"candidate": "local"},
+                },
+                source="<test>",
+            )
+
+    def test_the_candidate_may_not_judge_itself(self):
+        with pytest.raises(RosterError, match="itself|own"):
+            parse_roster(
+                {
+                    "models": [{"id": "local", "provider": "openai", "model": "q",
+                                "base_url": "http://localhost:1/v1"}],
+                    "roles": {"candidate": "local", "judge": "local"},
+                },
+                source="<test>",
+            )
+
+    def test_there_is_no_baseline_conflict_to_report(self):
+        assert self.single().judge_is_baseline is False
+
+    def test_a_candidate_is_still_required(self):
+        with pytest.raises(RosterError, match="candidate"):
+            parse_roster(
+                {
+                    "models": [{"id": "a", "provider": "anthropic", "model": "x"}],
+                    "roles": {"baseline": "a"},
+                },
+                source="<test>",
+            )
+
+    def test_a_two_model_roster_is_unaffected(self):
+        assert [r.value for r in roster().execution_roles] == ["candidate", "baseline"]
+        assert roster().judge_is_baseline is True

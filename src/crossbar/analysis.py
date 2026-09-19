@@ -90,6 +90,9 @@ class Analysis:
     verdict: Verdict
     unchecked_reasons: tuple[str, ...] = ()
     task_ids: tuple[str, ...] = ()
+    is_single_model: bool = False
+    """One model assessed on its own. There is nothing to compare against, so
+    the report states how it did rather than whether to switch."""
 
     def model(self, model_id: str) -> ModelSummary:
         for summary in self.models:
@@ -128,6 +131,7 @@ def analyze(result: RunResult, n_resamples: int = N_RESAMPLES, seed: int = 0) ->
         verdict=verdict,
         unchecked_reasons=tuple(_unchecked_reasons(judged)),
         task_ids=tuple(task_ids),
+        is_single_model=not baseline_id,
     )
 
 
@@ -262,7 +266,7 @@ def _decide(
             savings_usd = baseline.total_cost - candidate.total_cost
             savings_pct = savings_usd / baseline.total_cost * 100 if baseline.total_cost else 0.0
 
-    n_tasks = comparison.n_tasks if comparison else 0
+    n_tasks = comparison.n_tasks if comparison else (candidate.n_tasks if candidate else 0)
     confidence, note = _confidence(n_tasks)
     return Verdict(
         recommend_switch=switch,

@@ -112,8 +112,14 @@ def _cmd_validate(args) -> int:
     roster, tests = loaded
 
     print(f"Roster   {args.roster}")
-    for role in (Role.CANDIDATE, Role.BASELINE, Role.JUDGE):
+    roles = (Role.CANDIDATE, Role.JUDGE) if roster.is_single_model else (
+        Role.CANDIDATE, Role.BASELINE, Role.JUDGE
+    )
+    for role in roles:
         print(f"  {role.value:<10} {roster.assigned(role).id}")
+    if roster.is_single_model:
+        print("\n  This model is assessed on its own. Assign a baseline to compare")
+        print("  it against something.")
     if roster.judge_is_baseline:
         print("\n  Note: the baseline is also the judge, so it will grade its own")
         print("  attempts. They are blinded, but connect a separate judge before")

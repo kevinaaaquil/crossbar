@@ -198,3 +198,37 @@ class TestRenderingWidth:
         text = render_preflight(preflight(roster(), [a_test()]))
         for line in text.splitlines():
             assert len(line) <= 100, line
+
+
+class TestSingleModelPreflight:
+    def single_roster(self):
+        return parse_roster(
+            {
+                "models": [
+                    {"id": "local", "provider": "openai", "model": "q",
+                     "base_url": "http://localhost:1/v1"},
+                    {"id": "grader", "provider": "anthropic", "model": "big"},
+                ],
+                "roles": {"candidate": "local", "judge": "grader"},
+            },
+            source="<test>",
+        )
+
+    def test_a_single_model_setup_passes(self):
+        assert preflight(self.single_roster(), [a_test()]).ok is True
+
+    def test_the_roles_check_says_it_is_a_single_model_run(self):
+        roles = next(c for c in preflight(self.single_roster(), [a_test()]).checks
+                     if c.name == "roles")
+        assert roles.status is Status.OK
+        assert "local" in roles.detail
+        assert "baseline" not in roles.detail.lower()
+
+    def test_no_judge_conflict_is_warned_about(self):
+        judge = next(c for c in preflight(self.single_roster(), [a_test()]).checks
+                     if c.name == "judge")
+        assert judge.status is Status.OK
+
+    def test_half_the_attempts_are_planned(self):
+        """One role executing means one attempt per task per repeat."""
+        assert preflight(self.single_roster(), [a_test()]).planned_attempts == 1

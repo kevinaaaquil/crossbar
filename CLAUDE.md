@@ -211,6 +211,9 @@ there is always a model available to judge with.
 **Minimum two model connections.** At least one Candidate and one Baseline. The
 user may connect as many models as they like and assign roles in the UI.
 
+> **Revised 2026-09-20.** A Baseline is no longer required — see
+> [single-model runs](#2026-09-20--single-model-runs) below. A Candidate always is.
+
 **Roles are naming conventions, not behaviour.** Candidate, Baseline and Judge
 are user-assigned labels. They do not change how a Task is executed. They have
 exactly two mechanical consequences:
@@ -398,6 +401,36 @@ must expose a **queue model** — every planned unit of work with a state of
 moment. Build this into the orchestrator from the start; retrofitting a queue
 view onto an event stream means reconstructing state the orchestrator already
 had.
+
+### 2026-09-20 — Single-model runs
+
+**Decided.** A run may have a Candidate and no Baseline: one model assessed on
+its own. It answers *"is this good enough at all?"*, which is a different and
+usually earlier question than *"is it as good as what we pay for?"*
+
+This revises the earlier minimum of two connections. A **Candidate is still
+required**; a Baseline is not.
+
+**Two rules make it safe:**
+
+1. **A Judge must be assigned explicitly.** With no Baseline there is nothing
+   for the judge to fall back to.
+2. **The Candidate may not judge itself.** Rejected at load time. With a
+   Baseline, a model grading its own work is at least visible in the report as a
+   caveat; here there would be no second opinion at all, so it is refused rather
+   than warned about.
+
+**What changes downstream:** `execution_roles` yields only the Candidate, so the
+queue plans half as many Attempts. `judge_is_baseline` is always False.
+`Analysis.comparison` is `None` and `is_single_model` is True.
+
+**The report becomes an ASSESSMENT rather than a VERDICT.** No comparison exists,
+so none of the comparison vocabulary belongs on it — a "difference" or a
+"saving" measured against nothing is meaningless, and printing it anyway invites
+the reader to infer a comparison that was never made. A test forbids those words
+on the single-model card. What it does state: pass rate with an interval, the
+graded/unchecked/failed split, cost per success, confidence, and a note that
+assigning a second model turns it into a comparison.
 
 ### 2026-09-19 — Every run checks itself before it spends anything
 

@@ -89,6 +89,13 @@ def preflight(
 def _check_roles(roster: Roster) -> Check:
     try:
         candidate = roster.assigned(Role.CANDIDATE).id
+        if roster.is_single_model:
+            return Check(
+                "roles",
+                Status.OK,
+                f"{candidate} assessed on its own, judged by "
+                f"{roster.assigned(Role.JUDGE).id}",
+            )
         baseline = roster.assigned(Role.BASELINE).id
     except Exception as exc:
         return Check("roles", Status.FAIL, str(exc))

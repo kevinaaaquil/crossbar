@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 545
+**Total tests:** 575
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -251,6 +251,21 @@ says the user must be *asked* how many Tests to judge when more than one is
 scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
+
+### Single-model runs — done
+A Candidate with no Baseline: one model assessed on its own. 30 tests across
+roster, analysis, report, pre-flight and end-to-end.
+
+Revises the earlier two-connection minimum. A Judge must be named explicitly
+(nothing to fall back to) and the Candidate may not judge itself — refused at
+load time rather than warned about, since without a Baseline there is no second
+opinion at all.
+
+The report becomes an ASSESSMENT. A test forbids "baseline", "switch",
+"savings", "difference" and "vs" on that card: a difference measured against
+nothing is meaningless, and printing it invites the reader to infer a comparison
+that never happened. Writing that test caught my own explanatory note using the
+word "difference".
 
 ### Pre-flight — done
 `crossbar.preflight`, shared by `validate`, `doctor` and `run` so the three

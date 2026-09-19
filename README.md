@@ -67,6 +67,10 @@ These words mean one thing here, everywhere:
 not change how a Task runs. They mean exactly two things: the candidate's
 attempts run first, and the baseline judges when you do not connect a judge.
 
+A **baseline is optional**. With one, you get a comparison and a verdict on
+whether to switch. Without one, you get an assessment of a single model on its
+own — *is this good enough at all?* — which is usually the earlier question.
+
 ## Quickstart
 
 ```bash
@@ -219,6 +223,25 @@ is reported without an interval.
 | `crossbar dump <run>` | Zip a run for review |
 | `crossbar doctor` | Check Python, Docker, connectors and your keys |
 | `crossbar tui` | The interactive terminal app |
+
+## Evaluating one model on its own
+
+Leave the baseline out:
+
+```yaml
+roles:
+  candidate: my-model
+  judge: some-other-model     # required: nothing to fall back to
+```
+
+You get an **assessment** rather than a verdict: pass rate with an interval, the
+graded/unchecked/failed split, and cost per success. None of the comparison
+language appears, because a difference measured against nothing is meaningless.
+
+Two rules keep it honest. A judge must be named explicitly, since there is no
+baseline to fall back to. And the candidate may not judge itself — with a
+baseline that conflict is at least visible as a caveat, but here there would be
+no second opinion at all, so it is refused at load time.
 
 ## Every run checks itself first
 
