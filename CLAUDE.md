@@ -1,11 +1,13 @@
 # crossbar — working notes
 
-> **STATUS (2026-09-18).** The code in this repository (v0.1, 435 tests green)
-> was built to an **earlier design** in which the harness was a swept axis and
-> scoring was fully deterministic. That design has been **superseded** by the
-> product spec recorded below. Read [Terminology](#terminology) and
-> [Decisions](#decisions-log) before changing anything. The
-> [Code map](#code-map-what-survives-the-rebuild) says which parts survive.
+> **STATUS (2026-09-20).** On branch `redesign`, the MVP is **built** — 612
+> tests, offline. This file is the spec it was built to. `main` still holds
+> v0.1, an earlier design in which the harness was a swept axis and scoring was
+> deterministic; that design is superseded and `main` will be replaced.
+>
+> Read [Terminology](#terminology) and the [Decisions log](#decisions-log)
+> before changing anything. Running state is in
+> [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
 ---
 
@@ -25,9 +27,7 @@ The comparison axis is **models**. The harness is ours and is held constant.
 
 ## Terminology
 
-**These are fixed. Use them in code, docs, UI and conversation.** Where the code
-currently uses a different word, the rename is listed in
-[Planned renames](#planned-renames).
+**These are fixed. Use them in code, docs, UI and conversation.**
 
 | Term | Definition |
 |---|---|
@@ -35,7 +35,9 @@ currently uses a different word, the rename is listed in
 | **Task** | One isolated unit of work, run by an agent to perform an action. Its result is stored and later judged against a known correct result. |
 | **Environment** | The platform the agent interacts with, through our harness, to perform a Task. Example: an MCP backend that performs DB actions. Pluggable — a Docker image with UI + backend, backend only, or anything else. |
 
-### Supporting terms (proposed — confirm before they harden)
+### Supporting terms
+
+Settled and in the code.
 
 | Term | Definition |
 |---|---|
@@ -43,23 +45,20 @@ currently uses a different word, the rename is listed in
 | **Connector** | A toggleable capability granted to the agent for touching the Environment (MCP, browser, HTTP, shell, files). MVP ships MCP only. |
 | **Harness** | Ours. The runtime that drives a model through a Task using the enabled Connectors. Fixed, not a variable, and invisible to the user. |
 | **Candidate** | A user-assigned role label. Its Attempts run first for a given Test. Typically the user's local or fine-tuned model, but the label carries no other meaning. |
-| **Baseline** | A user-assigned role label. Its Attempts run second for a given Test. Typically a frontier model. Also the Judge fallback when no Judge is assigned. |
-| **Judge** | A model used to analyse results against the Golden. Optional; falls back to the Baseline. Always blinded to whose attempts it is grading. |
+| **Baseline** | A user-assigned role label. Its Attempts run second. Typically a frontier model. Also the Judge fallback when no Judge is assigned. Optional — see [single-model runs](#2026-09-20--single-model-runs). |
+| **Judge** | A model used to analyse results against the Golden. Falls back to the Baseline when one exists; required explicitly when one does not. Always blinded to whose attempts it is grading. |
 | **Dump** | A full zipped export of everything a run produced. For the user's own inspection or review by their own AI. We never need it to score: the Task tells us what to check. |
 | **Golden** | The known correct result for a Task, supplied by the user, in whatever form is natural. Never shaped to fit a check schema — the judge infers what to check from it. |
 | **Evidence** | Whatever was captured from an Attempt for the judge to examine. No fixed schema; determined by the Check Plan. |
 | **Check Plan** | What to inspect and what criteria to grade against, derived once per Task from Task + Golden before any Attempt runs, then applied to every Attempt of that Task. |
 | **Unchecked** | A Task outcome meaning the required evidence was unavailable, so no score was produced. Carries a reason. |
 
-### Planned renames
+### Renames, all done
 
-| Currently in code | Becomes |
-|---|---|
-| `TaskPack` | `Test` |
-| `taskpacks/` | `tests/` |
-| rollout | Attempt |
-| `ReactHarness` / `react` | the Harness (single, ours); `react` naming leaks implementation |
-| cell / agent (model+harness pair) | model, since the harness no longer varies |
+`TaskPack` → `Test`. `rollout` → `Attempt`. `ReactHarness`/`react` → `Harness`,
+single and ours. "cell" is gone: the harness no longer varies, so the unit is a
+model. The shipped example Test lives in **`examples/`**, not `tests/` as
+originally planned — `tests/` is pytest's.
 
 ---
 
@@ -98,8 +97,20 @@ currently uses a different word, the rename is listed in
 8. STATISTICS      intervals, paired comparison, verdict
 ```
 
-Layers 1, 7 and 8 exist and are solid. Layer 2 must become real (container-based).
-Layers 3, 5 and 6 are new.
+All eight layers are built. Module map:
+
+| Layer | Package |
+|---|---|
+| 1 | `roster.py`, `providers/`, `agents/` |
+| 2 | `environment/` |
+| 3 | `connectors/` |
+| 4 | `harness/` |
+| 5 | `evidence/` |
+| 6 | `judging/` |
+| 7 | `orchestrator/`, `preflight.py` |
+| 8 | `stats/`, `analysis.py`, `report/` |
+
+Plus `domain/` (Test, Task, Golden), `dump/`, `tui/`, `cli.py`, `demo/`.
 
 ---
 
@@ -203,8 +214,10 @@ biased; default to reference-based.
   grade the same artifact twice at temperature 0 and see whether the verdict
   holds.
 
-**Edge case resolved:** a run requires at least a Candidate and a Baseline, so
-there is always a model available to judge with.
+**Edge case:** originally resolved by requiring both a Candidate and a Baseline.
+That minimum was later relaxed — see
+[single-model runs](#2026-09-20--single-model-runs), where a Judge must instead
+be named explicitly and may not be the model under test.
 
 ### 2026-09-19 — Model roles are labels; execution order and judging budget
 
@@ -544,45 +557,36 @@ second CLI to check the adapter shape generalises.
 
 ---
 
-## Code map: what survives the rebuild
+## What came from v0.1 unchanged
 
-| Keep | Why |
-|---|---|
-| `stats/` | Bootstrap, paired tests, Holm, variance. Correct and self-contained. |
-| `analysis.py` | Verdict logic. Needs the axis changed from cells to models. |
-| `report/` | Verdict card, matrix, taxonomy. Wording changes only. |
-| `trace/` | Attempt recording. Extend with artifacts. |
-| `providers/` | Model clients. Gain the judge role. |
-| `runner/` | Orchestration skeleton, failure containment, repeats. |
-| `mcpclient/` | Becomes the innards of the MCP **Connector**. |
+`stats/` (bootstrap, paired tests, Holm, variance), `providers/` (model clients,
+now also used for the judge), `mcpclient/` (now the internals of the MCP
+connector — one fix: it was dropping MCP tool annotations, so `readOnlyHint`
+never reached the connector), and `trace/`.
 
-| Rewrite | Why |
-|---|---|
-| `tasks/` | New Test/Task format, goldens, connector selection. |
-| `env/` | Container-based, with reset between Attempts. |
-| `harness/` | Single harness, connector-driven, no third-party adapters. |
-| `scoring/` | Judge-based with human review, replacing deterministic-only. |
-| `tui/` | New flows: connect models, run a Test, review judgements. |
-
-Roughly 40% survives, and it is the hard-to-get-right 40%.
+Everything else was rewritten. `analysis.py` and `report/` were rebuilt rather
+than adapted, because the axis is models now and `Unchecked` needed first-class
+handling.
 
 ---
 
 ## Commands
 
 ```bash
-.venv/bin/pytest                    # full suite: no network, no key, no docker
-.venv/bin/crossbar run              # demo sweep with the built-in mock models
-.venv/bin/crossbar tui              # the terminal app
-.venv/bin/crossbar validate         # check roster + task pack
+.venv/bin/pytest                                    # 612 tests, all offline
+.venv/bin/crossbar demo                             # scripted run, no models needed
+.venv/bin/crossbar validate --test examples/support-triage
+.venv/bin/crossbar run --test examples/support-triage
+.venv/bin/crossbar tui --test examples/support-triage
 ```
 
 ## Conventions
 
 - **TDD throughout.** Every module was written test-first; keep it that way.
-- **No network in tests.** Models are `ScriptedProvider`/`MockProvider`, the
-  `claude` CLI and `docker` are fake binaries in `tests/fixtures`. MCP servers
-  are real subprocesses — do not mock those, they are the integration surface.
+- **No network in tests.** Models and the judge are scripted
+  (`ScriptedProvider`, `ScriptedJudge`), and `docker` is a stub binary. MCP
+  servers are real subprocesses — do not mock those, they are the integration
+  surface.
 - **Determinism is a feature.** Seeds use `crc32`, not `hash()` (Python salts
   string hashing per process). Anything that cannot replay in a fresh
   interpreter is a bug.
