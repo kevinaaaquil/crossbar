@@ -194,6 +194,29 @@ The bundled `crossbar.demo.tickets_server` is a complete, small example.
 
 ---
 
+### An Environment must not bake in the date it was built
+
+If your image seeds a database, anything it computes at **build** time is frozen
+into the image. `CURRENT_DATE - 30` in a seed script is not "thirty days ago" —
+it is one specific date, decided on the machine that ran `docker build`, and it
+stops being thirty days ago tomorrow.
+
+This is the worst failure an Environment can have, because nothing looks broken.
+A Golden that says "four loans are overdue" stays true for exactly one day. On
+day three it is five loans, and a model that answers correctly is marked wrong —
+by the Environment, not the judge. Nobody investigating a bad score would think
+to check the image's build date.
+
+Seed whatever you like at build time, for speed, but **shift time-relative data
+onto today when the container starts**. The bundled library example keeps a
+one-row anchor table recording the date the seed was written, and its entrypoint
+shifts every seeded date by `today - anchor` before anything can connect.
+
+The same goes for anything else that ages: expiry dates, tokens, "recent"
+activity, retention windows.
+
+---
+
 ## Three rules for a Task worth trusting
 
 **1. Solvable with the tools provided.** If the agent cannot reach what it
