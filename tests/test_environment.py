@@ -13,6 +13,7 @@ from crossbar.environment import (
     EnvironmentError_,
     EnvironmentHandle,
     LocalEnvironment,
+    RemoteExec,
     build_environment,
 )
 
@@ -269,4 +270,67 @@ class TestIntegrationWithTheFixtureTest:
             assert all(t["priority"] != "urgent" for t in dump)
         finally:
             connector.teardown()
+            env.stop()
+
+
+class TestRemoteExec:
+    """Environment variables and a working directory for a command the prefix
+    runs somewhere else.
+
+    Without this, ``env:`` in a Test lands on the local ``docker exec`` process
+    and never reaches the server inside the container: no error, no effect.
+    """
+
+    def _remote_handle(self):
+        return EnvironmentHandle(
+            workspace="/tmp/ws",
+            command_prefix=("docker", "exec", "-i", "cid"),
+            remote=RemoteExec(insert_at=3),
+        )
+
+    def test_env_vars_are_injected_into_the_remote_argv(self):
+        launch = self._remote_handle().launch("srv", (), env={"PGHOST": "db"})
+        assert launch.argv == [
+            "docker", "exec", "-i", "-e", "PGHOST=db", "cid", "srv",
+        ]
+
+    def test_the_remote_process_env_carries_no_task_variables(self):
+        """They went into the argv; applying them locally too would be a lie
+        about where they take effect."""
+        launch = self._remote_handle().launch("srv", (), env={"PGHOST": "db"})
+        assert "PGHOST" not in launch.env
+
+    def test_cwd_is_injected_into_the_remote_argv(self):
+        launch = self._remote_handle().launch("srv", (), cwd="/srv/app")
+        assert launch.argv[:6] == ["docker", "exec", "-i", "-w", "/srv/app", "cid"]
+        assert launch.cwd is None
+
+    def test_variables_are_expanded_before_injection(self):
+        handle = EnvironmentHandle(
+            workspace="/tmp/ws",
+            command_prefix=("docker", "exec", "-i", "cid"),
+            remote=RemoteExec(insert_at=3),
+        )
+        launch = handle.launch("srv", (), env={"W": "${CROSSBAR_WORKSPACE}/x"})
+        assert "W=/tmp/ws/x" in launch.argv
+
+    def test_a_local_handle_applies_env_to_the_process_instead(self):
+        handle = EnvironmentHandle(workspace="/tmp/ws")
+        launch = handle.launch("srv", ("-m",), env={"PGHOST": "db"})
+        assert launch.argv == ["srv", "-m"]
+        assert launch.env["PGHOST"] == "db"
+
+    def test_a_local_handle_keeps_the_cwd_on_the_process(self):
+        handle = EnvironmentHandle(workspace="/tmp/ws")
+        launch = handle.launch("srv", (), cwd="${CROSSBAR_WORKSPACE}/sub")
+        assert launch.cwd == "/tmp/ws/sub"
+
+    def test_the_docker_environment_inserts_before_the_container_id(self, fake_docker):
+        env = DockerEnvironment(docker_spec(), docker_bin=fake_docker.binary)
+        handle = env.start()
+        try:
+            launch = handle.launch("srv", (), env={"K": "v"})
+            assert launch.argv[-2:] == [env.container_id, "srv"]
+            assert "K=v" in launch.argv
+        finally:
             env.stop()

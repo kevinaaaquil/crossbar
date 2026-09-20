@@ -14,7 +14,7 @@ from crossbar.connectors import (
     known_connectors,
 )
 from crossbar.domain import ConnectorConfig
-from crossbar.environment import EnvironmentHandle
+from crossbar.environment import EnvironmentHandle, RemoteExec
 
 PY = sys.executable
 
@@ -200,6 +200,21 @@ class TestVariableExpansion:
 
     def test_unknown_variables_are_left_alone(self, handle):
         assert handle.expand("${NOT_SET_ANYWHERE}/x") == "${NOT_SET_ANYWHERE}/x"
+
+    def test_a_servers_env_reaches_a_containerised_server(self, tmp_path):
+        """Under docker the server runs in the container, so ``env:`` has to
+        travel on the prefix. Applied to the local process it would reach the
+        ``docker exec`` client and go no further -- silently."""
+        handle = EnvironmentHandle(
+            workspace=str(tmp_path),
+            command_prefix=("docker", "exec", "-i", "cid"),
+            remote=RemoteExec(insert_at=3),
+        )
+        c = McpConnector(config())
+        launch = c.build_launch(
+            handle, {"command": "srv", "env": {"PGHOST": "db"}}
+        )
+        assert launch.argv == ["docker", "exec", "-i", "-e", "PGHOST=db", "cid", "srv"]
 
     def test_the_command_prefix_is_applied(self, tmp_path):
         """A docker environment prefixes every server command with docker exec."""

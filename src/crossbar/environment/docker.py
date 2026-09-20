@@ -12,6 +12,7 @@ import uuid
 
 from crossbar.domain import EnvironmentSpec
 from crossbar.environment.base import EnvironmentError_, EnvironmentHandle
+from crossbar.environment.handle import RemoteExec
 
 CONTAINER_WORKSPACE = "/tmp/crossbar-workspace"
 
@@ -60,9 +61,12 @@ class DockerEnvironment:
             [self.docker_bin, "exec", self.container_id, "mkdir", "-p", CONTAINER_WORKSPACE],
             "creating the container workspace",
         )
+        prefix = (self.docker_bin, "exec", "-i", self.container_id)
         self._handle = EnvironmentHandle(
             workspace=CONTAINER_WORKSPACE,
-            command_prefix=(self.docker_bin, "exec", "-i", self.container_id),
+            command_prefix=prefix,
+            # Flags go before the container id, which is the prefix's last word.
+            remote=RemoteExec(insert_at=len(prefix) - 1),
         )
         return self._handle
 

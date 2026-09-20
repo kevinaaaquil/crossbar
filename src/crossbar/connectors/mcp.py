@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 from crossbar.connectors.base import ConnectorError, ToolResult, ToolSpec
 from crossbar.connectors.registry import register
 from crossbar.domain import ConnectorConfig
-from crossbar.environment import EnvironmentHandle
+from crossbar.environment import EnvironmentHandle, Launch
 from crossbar.mcpclient import McpError, McpStdioClient
 
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
@@ -41,13 +41,13 @@ class McpConnector:
                 server_name = str(spec.get("name") or "")
                 if not server_name:
                     raise ConnectorError("every mcp server needs a 'name'")
-                argv = self.build_argv(handle, spec)
+                launch = self.build_launch(handle, spec)
                 client = McpStdioClient(
                     name=server_name,
-                    command=argv[0],
-                    args=argv[1:],
-                    env=handle.server_env(spec.get("env")),
-                    cwd=handle.expand(spec["cwd"]) if spec.get("cwd") else None,
+                    command=launch.argv[0],
+                    args=launch.argv[1:],
+                    env=launch.env,
+                    cwd=launch.cwd,
                 )
                 client.start()
                 started[server_name] = client
@@ -67,13 +67,26 @@ class McpConnector:
     def is_running(self) -> bool:
         return bool(self.clients) and all(c.is_running for c in self.clients.values())
 
-    def build_argv(self, handle: EnvironmentHandle, spec: Mapping[str, Any]) -> list[str]:
-        """Full command line for one server, including the environment's prefix."""
-        command = handle.expand(str(spec.get("command") or ""))
-        if not command:
+    def build_launch(self, handle: EnvironmentHandle, spec: Mapping[str, Any]) -> Launch:
+        """Everything needed to start one server under this Environment.
+
+        The Environment, not this Connector, decides whether the server's
+        ``env`` and ``cwd`` belong in the argv or on the process: under docker
+        the server is inside the container, and anything applied here would
+        stop at the ``docker exec`` client without a word."""
+        command = str(spec.get("command") or "")
+        if not handle.expand(command):
             raise ConnectorError(f"mcp server {spec.get('name')!r} has no 'command'")
-        args = [handle.expand(str(a)) for a in (spec.get("args") or ())]
-        return [*handle.command_prefix, command, *args]
+        return handle.launch(
+            command,
+            tuple(spec.get("args") or ()),
+            env=spec.get("env"),
+            cwd=spec.get("cwd"),
+        )
+
+    def build_argv(self, handle: EnvironmentHandle, spec: Mapping[str, Any]) -> list[str]:
+        """The command line alone. Kept for callers that only want the words."""
+        return self.build_launch(handle, spec).argv
 
     # -- tools -------------------------------------------------------------
 

@@ -74,6 +74,10 @@ Two are always defined:
 
 An unknown name is left as-is rather than blanked, so a typo is visible.
 
+Under `kind: docker`, `env`, `cwd` and the workspace are all *inside the
+container*: crossbar passes them to `docker exec`, not to the local process, so
+they mean what they say on the server's side and nothing on yours.
+
 ### `*.task.yaml`
 
 ```yaml
@@ -176,6 +180,15 @@ keeps state only in memory, write it to `${CROSSBAR_WORKSPACE}` too:
 ```python
 path = os.path.join(os.environ["CROSSBAR_WORKSPACE"], "state.json")
 ```
+
+**Under `kind: docker` the workspace is not a way to keep anything.** It is a
+directory inside the container, with nothing mounted behind it, so it dies when
+the container does — and it must, or one Attempt could read the last one's
+state. What survives a containerised Attempt is the evidence crossbar captures
+through your read-only tools while the container is still up. So a
+containerised Test needs a probe that can show the state that matters — a
+`dump_database` or equivalent — and that probe is what makes it judgeable, not
+the workspace.
 
 The bundled `crossbar.demo.tickets_server` is a complete, small example.
 

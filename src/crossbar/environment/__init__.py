@@ -4,7 +4,7 @@ One container, one Task at a time. Recreated between Attempts, because leaked
 state produces quietly wrong numbers with nothing to notice.
 """
 
-from crossbar.environment.handle import EnvironmentHandle
+from crossbar.environment.handle import EnvironmentHandle, Launch, RemoteExec
 from crossbar.environment.base import Environment, EnvironmentError_
 from crossbar.environment.local import LocalEnvironment
 from crossbar.environment.docker import DockerEnvironment
@@ -15,6 +15,8 @@ __all__ = [
     "Environment",
     "EnvironmentError_",
     "EnvironmentHandle",
+    "Launch",
     "LocalEnvironment",
+    "RemoteExec",
     "build_environment",
 ]

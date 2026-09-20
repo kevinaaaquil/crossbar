@@ -11,12 +11,45 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 WORKSPACE_VAR = "CROSSBAR_WORKSPACE"
 PYTHON_VAR = "CROSSBAR_PYTHON"
+
+
+@dataclass(frozen=True)
+class RemoteExec:
+    """How to hand a command its environment when the prefix runs it elsewhere.
+
+    ``docker exec`` launches the server inside the container, so variables set
+    on the local process reach the ``docker exec`` client and stop there. They
+    have to travel as flags on the prefix instead, and those flags belong
+    before the container id -- hence ``insert_at``, which the Environment that
+    built the prefix is the only thing in a position to know.
+    """
+
+    insert_at: int
+    env_flag: str = "-e"
+    cwd_flag: str = "-w"
+
+    def flags(self, env: Mapping[str, str], cwd: str | None) -> list[str]:
+        out: list[str] = []
+        for key, value in env.items():
+            out.extend([self.env_flag, f"{key}={value}"])
+        if cwd:
+            out.extend([self.cwd_flag, cwd])
+        return out
+
+
+@dataclass(frozen=True)
+class Launch:
+    """One command, ready to run: what to exec, and under what."""
+
+    argv: list[str]
+    env: dict[str, str]
+    cwd: str | None
 
 
 @dataclass(frozen=True)
@@ -30,6 +63,11 @@ class EnvironmentHandle:
     command_prefix: tuple[str, ...] = ()
     """Prepended to every command a Connector launches. Empty for a local
     environment; ``docker exec -i <container>`` for a containerised one."""
+
+    remote: "RemoteExec | None" = None
+    """Set when ``command_prefix`` runs the command somewhere else, so a Task's
+    ``env`` and ``cwd`` must be injected into the prefix. ``None`` means the
+    command runs locally and they apply to the process."""
 
     env_vars: Mapping[str, str] = field(default_factory=dict)
     endpoints: Mapping[str, str] = field(default_factory=dict)
@@ -66,3 +104,36 @@ class EnvironmentHandle:
         if self.workspace:
             env.setdefault(WORKSPACE_VAR, self.workspace)
         return env
+
+    def launch(
+        self,
+        command: str,
+        args: "Sequence[str]" = (),
+        env: Mapping[str, str] | None = None,
+        cwd: str | None = None,
+    ) -> Launch:
+        """Everything needed to start one server under this Environment.
+
+        Whether a Task's ``env`` and ``cwd`` end up in the argv or on the
+        process is the Environment's business, not the Connector's: a Connector
+        that decided for itself would silently drop both under docker.
+        """
+        expanded_env = {k: self.expand(str(v)) for k, v in (env or {}).items()}
+        expanded_cwd = self.expand(cwd) if cwd else None
+        argv = [
+            *self.command_prefix,
+            self.expand(command),
+            *(self.expand(str(a)) for a in args),
+        ]
+        if self.remote is None:
+            return Launch(
+                argv=argv,
+                env=self.server_env(expanded_env),
+                cwd=expanded_cwd,
+            )
+        flags = self.remote.flags(expanded_env, expanded_cwd)
+        at = self.remote.insert_at
+        argv[at:at] = flags
+        # The variables travel as flags; the local `docker exec` client gets
+        # only what the Environment itself set, never the Task's.
+        return Launch(argv=argv, env=dict(self.env_vars), cwd=None)
