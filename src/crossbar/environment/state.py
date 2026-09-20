@@ -14,7 +14,7 @@ to start a container from when reproducing a failure.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from crossbar.domain import StateSpec
@@ -37,8 +37,13 @@ class StateHooks:
         self.run = run
         self.files = files
 
-    def snapshot(self, into: Path) -> Path:
-        """Take a copy of the live state and bring it out to ``into``."""
+    def snapshot(self, into_dir: Path) -> Path:
+        """Take a copy of the live state and bring it out into ``into_dir``.
+
+        The file keeps the name the hook gave it. crossbar cannot know what
+        extension this store's state carries -- .db, .dump, .tar -- and a name
+        it invented would lie about the format to whatever opens it next.
+        """
         printed = self.run([self.spec.snapshot], "the snapshot hook")
         remote = _last_line(printed)
         if not remote:
@@ -46,9 +51,11 @@ class StateHooks:
                 f"the snapshot hook {self.spec.snapshot!r} printed no path; it must "
                 "print the file it wrote as its last line of output"
             )
-        into.parent.mkdir(parents=True, exist_ok=True)
-        self.files.copy_out(remote, into)
-        return into
+        into_dir = Path(into_dir)
+        into_dir.mkdir(parents=True, exist_ok=True)
+        local = into_dir / PurePosixPath(remote).name
+        self.files.copy_out(remote, local)
+        return local
 
     def restore(self, source: Path) -> None:
         """Install ``source`` as the live state.

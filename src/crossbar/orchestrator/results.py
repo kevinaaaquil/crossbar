@@ -31,6 +31,10 @@ class Attempt:
     usage: Usage = field(default_factory=Usage)
     cost_usd: float = 0.0
     wall_time_s: float = 0.0
+    state_path: str = ""
+    """Where this Attempt's end state was kept, for Environments that declare
+    state hooks. Relative to the results directory. Empty when the Environment
+    has no state to hand out -- which is most of them."""
     error: str = ""
 
     @property
@@ -40,6 +44,7 @@ class Attempt:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "state_path": self.state_path,
             "test_name": self.test_name,
             "task_id": self.task_id,
             "model_id": self.model_id,
@@ -67,6 +72,7 @@ class Attempt:
             usage=Usage(int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))),
             cost_usd=float(data.get("cost_usd", 0.0)),
             wall_time_s=float(data.get("wall_time_s", 0.0)),
+            state_path=str(data.get("state_path", "")),
             error=str(data.get("error", "")),
         )
 

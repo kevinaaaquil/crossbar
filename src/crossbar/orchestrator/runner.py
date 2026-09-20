@@ -19,6 +19,7 @@ from crossbar.agents import CliAgent, ModelAgent
 from crossbar.connectors import build_connector
 from crossbar.domain import Role, Task, Test
 from crossbar.environment import build_environment
+from crossbar.orchestrator.pool import EnvironmentPool
 from crossbar.evidence import Evidence, capture
 from crossbar.judging import (
     CheckPlan,
@@ -128,15 +129,24 @@ class Orchestrator:
 
         for test in self.tests:
             plans = self._make_plans(test)
-            for role in self.roles:
-                model = self.roster.assigned(role)
-                for task in test.tasks:
-                    for repeat in range(test.repeats):
-                        attempt = self._run_attempt(test, task, model, role, repeat, plans)
-                        if test.name in judged and self.judge is not None:
-                            self._judge_attempt(attempt, plans.get(task.id))
-                        self._store(attempt)
-                        attempts.append(attempt)
+            # One pool per Test: an Environment that can be put back is kept up
+            # across the Test's Attempts and stopped with it, so nothing leaks
+            # into the next Test even when the state hooks are in play.
+            pool = EnvironmentPool(self.results_dir / "state")
+            try:
+                for role in self.roles:
+                    model = self.roster.assigned(role)
+                    for task in test.tasks:
+                        for repeat in range(test.repeats):
+                            attempt = self._run_attempt(
+                                test, task, model, role, repeat, plans, pool
+                            )
+                            if test.name in judged and self.judge is not None:
+                                self._judge_attempt(attempt, plans.get(task.id))
+                            self._store(attempt)
+                            attempts.append(attempt)
+            finally:
+                _quietly(pool.close)
 
         result = RunResult(
             run_id=self.run_id,
@@ -208,7 +218,8 @@ class Orchestrator:
         return plans
 
     def _run_attempt(
-        self, test: Test, task: Task, model, role: Role, repeat: int, plans
+        self, test: Test, task: Task, model, role: Role, repeat: int, plans,
+        pool: "EnvironmentPool | None" = None,
     ) -> Attempt:
         item = self._queue_item(test, task, model.id, role, repeat)
         if item is not None:
@@ -226,11 +237,14 @@ class Orchestrator:
         plan = plans.get(task.id)
         started = time.monotonic()
 
-        environment = build_environment(task.environment or test.environment)
+        spec = task.environment or test.environment
+        pool = pool or EnvironmentPool(self.results_dir / "state")
+        lease = None
         connectors: list[Any] = []
         handle = None
         try:
-            handle = environment.start()
+            lease = pool.acquire(spec)
+            handle = lease.handle
             connectors = self._connectors(task, test, handle)
             agent = self.agent_factory(model.id, role, task, repeat)
             attempt.trajectory = agent.run(task, connectors, repeat=repeat)
@@ -250,7 +264,17 @@ class Orchestrator:
         finally:
             for connector in connectors:
                 _quietly(connector.teardown)
-            environment.stop()
+            if lease is not None:
+                # Releasing keeps this Attempt's end state and puts the
+                # baseline back, so it has to happen even when the Attempt
+                # failed -- otherwise the next one starts in this one's world.
+                try:
+                    kept = pool.release(lease, attempt.id)
+                except Exception as exc:  # pragma: no cover - reported, not raised
+                    kept = None
+                    attempt.error = attempt.error or f"releasing the environment failed: {exc}"
+                if kept is not None:
+                    attempt.state_path = str(Path(kept).relative_to(self.results_dir))
 
         attempt.wall_time_s = time.monotonic() - started
         if attempt.trajectory is not None:
