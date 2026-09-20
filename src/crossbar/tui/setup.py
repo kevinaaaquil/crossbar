@@ -118,6 +118,9 @@ class SetupPanel(VerticalScroll):
             yield Input(placeholder="command", id="setup-field-command")
             yield Input(placeholder="$/Mtok in", id="setup-field-input-price")
             yield Input(placeholder="$/Mtok out", id="setup-field-output-price")
+            # Optional: blank means "not set", which is not the same as zero.
+            yield Input(placeholder="max_tokens", id="setup-field-max-tokens")
+            yield Input(placeholder="temperature", id="setup-field-temperature")
         with Horizontal(classes="setup-row"):
             yield Button("Apply changes", id="setup-apply")
             yield Button("Remove model", id="setup-remove")
@@ -140,6 +143,9 @@ class SetupPanel(VerticalScroll):
         with Horizontal(classes="setup-row"):
             yield Label("Tests to judge")
             yield Input(id="setup-judge-tests", classes="setup-narrow")
+            yield Label("Repeats")
+            yield Input(placeholder="each Test's own", id="setup-repeats",
+                        classes="setup-narrow")
             yield Label("Results dir")
             yield Input(id="setup-results-dir", classes="setup-narrow")
 
@@ -188,8 +194,21 @@ class SetupPanel(VerticalScroll):
             self.draft,
             tests=self._tests(),
             judge_tests=max(0, self._judge_tests()),
+            repeats=self._repeats(),
             results_dir=self._text("#setup-results-dir").strip() or "runs",
         )
+
+    def _repeats(self) -> int | None:
+        """How many times to attempt each Task, or None to leave each Test to
+        its own. Unreadable text becomes 0, which validation rejects rather
+        than silently running once."""
+        raw = self._text("#setup-repeats").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return 0
 
     def _tests(self) -> list[str]:
         return [part.strip() for part in self._text("#setup-tests").split(",") if part.strip()]
@@ -245,6 +264,13 @@ class SetupPanel(VerticalScroll):
 
     # -- editing -----------------------------------------------------------
 
+    def select_model(self, model_id: str) -> None:
+        """Select a model by id, keeping the visible list in step."""
+        self._load_fields(self.draft.model(model_id))
+        listing = self.query_one("#setup-models", ListView)
+        if model_id in self._listed_ids:
+            listing.index = self._listed_ids.index(model_id)
+
     def apply_fields(self) -> None:
         """Write the edit fields back onto the selected model."""
         current = self.draft.model(self.selected_id)
@@ -266,6 +292,23 @@ class SetupPanel(VerticalScroll):
                 self._status(f"{raw!r} is not a price. Nothing was changed.")
                 return
 
+        optional: dict[str, Any] = {}
+        for field, selector, cast in (
+            ("max_tokens", "#setup-field-max-tokens", int),
+            ("temperature", "#setup-field-temperature", float),
+        ):
+            raw = self._text(selector).strip()
+            if not raw:
+                # Blank means unset. It is not zero: temperature 0 is
+                # deterministic sampling, and writing it would change the run.
+                optional[field] = None
+                continue
+            try:
+                optional[field] = cast(raw)
+            except ValueError:
+                self._status(f"{raw!r} is not a number. Nothing was changed.")
+                return
+
         new_id = self._text("#setup-field-id").strip() or current.id
         if new_id != current.id and self.draft.model(new_id) is not None:
             # Renaming onto another id would fold two connections into one and
@@ -281,6 +324,7 @@ class SetupPanel(VerticalScroll):
             api_key_env=self._text("#setup-field-api-key-env").strip(),
             command=self._text("#setup-field-command").strip() or current.command,
             **prices,
+            **optional,
         )
         self.draft = self._replacing(current.id, edited)
         self._status(f"Updated {edited.id}.")
@@ -420,6 +464,10 @@ class SetupPanel(VerticalScroll):
             ("#setup-field-command", model.command if model else ""),
             ("#setup-field-input-price", f"{model.input_price:g}" if model else ""),
             ("#setup-field-output-price", f"{model.output_price:g}" if model else ""),
+            ("#setup-field-max-tokens",
+             str(model.max_tokens) if model and model.max_tokens is not None else ""),
+            ("#setup-field-temperature",
+             f"{model.temperature:g}" if model and model.temperature is not None else ""),
         ):
             self._fill(self.query_one(selector, Input), value)
         # A bare model endpoint has no command to run, and offering one invites

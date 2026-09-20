@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 790
+**Total tests:** 809
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -260,6 +260,13 @@ The file stays the source of truth: a round-trip test writes a config, reads it
 back into a draft, rewrites it, and asserts the bytes are identical — so the UI
 and hand-editing cannot drift into producing something the other fails to read.
 Presets carry the fiddly parts so the only thing left to type is the model name.
+
+Setup edits `repeats`, `max_tokens` and `temperature` too. They were left out of
+the first pass for no good reason — they are plain numbers on a plain form. The
+one subtlety worth keeping: **blank is not zero.** An empty temperature field
+means "unset" and is omitted from the file, while an explicit `0` is written,
+because temperature 0 is deterministic sampling and silently writing it would
+change how the model runs.
 
 Found while verifying: the app was rediscovering the project from the working
 directory rather than using the one it was opened with, so Setup could have

@@ -240,3 +240,58 @@ class TestPresets:
 
     def test_presets_carry_a_human_label(self):
         assert all(p.label for p in PRESETS.values())
+
+
+class TestOptionalNumericSettings:
+    """repeats, max_tokens and temperature are plain numbers. The only subtlety
+    is that unset and zero are different things."""
+
+    def test_repeats_is_written_when_set(self):
+        assert yaml.safe_load(render_config(a_draft(repeats=5)))["run"]["repeats"] == 5
+
+    def test_repeats_is_absent_when_unset(self):
+        assert "repeats" not in yaml.safe_load(render_config(a_draft()))["run"]
+
+    def test_a_zero_temperature_is_written_not_dropped(self):
+        """Temperature 0 means deterministic sampling. Treating it as 'unset'
+        would silently change how the model is run."""
+        draft = a_draft(models=[ModelDraft(id="k", kind="openai", model="k",
+                                           base_url="http://x/v1", temperature=0.0)],
+                        candidate="k", baseline=None, judge=None)
+        assert yaml.safe_load(render_config(draft))["models"][0]["temperature"] == 0.0
+
+    def test_a_zero_max_tokens_is_rejected_rather_than_written(self):
+        draft = a_draft(models=[ModelDraft(id="k", kind="openai", model="k",
+                                           base_url="http://x/v1", max_tokens=0)],
+                        candidate="k", baseline=None, judge=None)
+        assert any("max_tokens" in p for p in validate_draft(draft))
+
+    def test_negative_repeats_are_rejected(self):
+        assert any("repeats" in p.lower() for p in validate_draft(a_draft(repeats=0)))
+
+    def test_a_temperature_outside_the_usable_range_is_rejected(self):
+        draft = a_draft(models=[ModelDraft(id="k", kind="openai", model="k",
+                                           base_url="http://x/v1", temperature=9.0)],
+                        candidate="k", baseline=None, judge=None)
+        assert any("temperature" in p for p in validate_draft(draft))
+
+    def test_these_survive_a_round_trip(self, tmp_path):
+        target = tmp_path / "config.yaml"
+        draft = a_draft(
+            repeats=4,
+            models=[ModelDraft(id="k", kind="openai", model="k", base_url="http://x/v1",
+                               max_tokens=8192, temperature=0.3)],
+            candidate="k", baseline=None, judge="k2",
+        )
+        draft = ConfigDraft(**{**draft.__dict__, "judge": None, "baseline": "k"})
+        draft = a_draft(repeats=4, models=[
+            ModelDraft(id="k", kind="openai", model="k", base_url="http://x/v1",
+                       max_tokens=8192, temperature=0.3),
+            ModelDraft(id="b", kind="anthropic", model="b"),
+        ], candidate="k", baseline="b")
+        write_config(draft, target)
+        back = draft_from_config(target)
+        assert back.repeats == 4
+        model = back.model("k")
+        assert model.max_tokens == 8192
+        assert model.temperature == 0.3

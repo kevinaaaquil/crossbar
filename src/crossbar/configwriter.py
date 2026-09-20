@@ -163,6 +163,10 @@ def validate_draft(draft: ConfigDraft) -> list[str]:
             problems.append(
                 f"{model.id!r} needs a base_url — the endpoint it is served from."
             )
+        if model.max_tokens is not None and model.max_tokens <= 0:
+            problems.append(f"{model.id!r}: max_tokens must be a positive number.")
+        if model.temperature is not None and not 0.0 <= model.temperature <= 2.0:
+            problems.append(f"{model.id!r}: temperature must be between 0 and 2.")
 
     if not draft.candidate:
         problems.append("Choose a candidate: the model you want to assess.")
@@ -190,6 +194,8 @@ def validate_draft(draft: ConfigDraft) -> list[str]:
         problems.append("Add at least one Test directory.")
     if draft.judge_tests < 0:
         problems.append("'Tests to judge' cannot be negative.")
+    if draft.repeats is not None and draft.repeats < 1:
+        problems.append("'Repeats' must be at least 1, or left unset to use each Test's own.")
     return problems
 
 

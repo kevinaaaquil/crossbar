@@ -631,3 +631,137 @@ class TestMarkup:
             await with_draft(app, pilot, draft)
             app.export_screenshot()
             assert "odd[/]id" in text_of(app, "#setup-problems")
+
+
+class TestNumericFieldsAreEditable:
+    """repeats, max_tokens and temperature are plain numbers on a plain form.
+    Nothing about them needed a model or a round trip — they were simply left
+    out of the first pass."""
+
+    async def test_max_tokens_and_temperature_reach_the_model(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "8192")
+            set_value(app, "#setup-field-temperature", "0.3")
+            panel.apply_fields()
+            model = panel.draft.model("local")
+            assert model.max_tokens == 8192
+            assert model.temperature == 0.3
+
+    async def test_clearing_them_unsets_rather_than_zeroes(self, tmp_path):
+        """Temperature 0 is deterministic sampling. It is not the same as the
+        user not having said, and writing 0 would change how the model runs."""
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "8192")
+            set_value(app, "#setup-field-temperature", "0.3")
+            panel.apply_fields()
+
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "")
+            set_value(app, "#setup-field-temperature", "")
+            panel.apply_fields()
+            model = panel.draft.model("local")
+            assert model.max_tokens is None
+            assert model.temperature is None
+
+    async def test_an_explicit_zero_temperature_is_kept(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-temperature", "0")
+            panel.apply_fields()
+            assert panel.draft.model("local").temperature == 0.0
+
+    async def test_nonsense_in_a_numeric_field_changes_nothing(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "8192")
+            panel.apply_fields()
+
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "lots")
+            panel.apply_fields()
+            assert panel.draft.model("local").max_tokens == 8192
+
+    async def test_a_bad_number_says_so(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-temperature", "warm")
+            panel.apply_fields()
+            assert "warm" in text_of(app, "#setup-status")
+
+    async def test_selecting_a_model_shows_what_is_already_set(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-temperature", "0.7")
+            panel.apply_fields()
+
+            panel.select_model("frontier")
+            panel.select_model("local")
+            assert app.query_one("#setup-field-temperature", Input).value == "0.7"
+
+    async def test_an_unset_value_shows_as_blank(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            assert app.query_one("#setup-field-max-tokens", Input).value == ""
+
+    async def test_repeats_reaches_the_draft(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            await with_draft(app, pilot, sound_draft())
+            set_value(app, "#setup-repeats", "5")
+            assert panel_of(app).current_draft().repeats == 5
+
+    async def test_a_blank_repeats_leaves_each_test_to_its_own(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            await with_draft(app, pilot, sound_draft())
+            set_value(app, "#setup-repeats", "")
+            assert panel_of(app).current_draft().repeats is None
+
+    async def test_a_bad_repeats_is_reported_and_blocks_the_save(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            set_value(app, "#setup-repeats", "0")
+            assert any("Repeats" in p for p in panel.problems())
+            assert panel.save() is False
+            assert not config_path(tmp_path).exists()
+
+    async def test_they_survive_a_save_and_reload(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            panel.select_model("local")
+            set_value(app, "#setup-field-max-tokens", "4096")
+            set_value(app, "#setup-field-temperature", "0.2")
+            panel.apply_fields()
+            set_value(app, "#setup-repeats", "2")
+            assert panel.save() is True
+
+        reloaded = draft_from_config(config_path(tmp_path))
+        assert reloaded.repeats == 2
+        assert reloaded.model("local").max_tokens == 4096
+        assert reloaded.model("local").temperature == 0.2
+
+    async def test_the_saved_file_still_loads_as_a_project(self, tmp_path):
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            panel = await with_draft(app, pilot, sound_draft())
+            set_value(app, "#setup-repeats", "3")
+            assert panel.save() is True
+        assert load_project(tmp_path).tests
