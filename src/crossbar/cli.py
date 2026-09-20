@@ -27,7 +27,7 @@ from crossbar.project import (
     init_project,
     load_project,
 )
-from crossbar.report import render_report, write_markdown
+from crossbar.report import attempt_line, render_attempt, render_report, write_markdown
 from crossbar.roster import Roster, RosterError, build_provider, load_roster
 
 DEFAULT_ROSTER = "roster.yaml"
@@ -62,6 +62,8 @@ def _parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate", help="check the roster and tests before spending anything")
     _common(validate)
+    validate.add_argument("--single", action="store_true",
+                          help="report what a single-model run would do")
     validate.set_defaults(handler=_cmd_validate)
 
     run = sub.add_parser("run", help="run the tests and judge the results")
@@ -74,6 +76,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--quiet", action="store_true")
     run.add_argument("--skip-preflight", action="store_true",
                      help="start without checking the setup first")
+    run.add_argument("--single", action="store_true",
+                     help="assess one model on its own instead of comparing two")
     run.set_defaults(handler=_cmd_run)
 
     judge = sub.add_parser("judge", help="judge a stored run without re-running it")
@@ -90,6 +94,19 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--markdown", help="also write the report here")
     report.add_argument("--json", action="store_true", help="machine-readable output")
     report.set_defaults(handler=_cmd_report)
+
+    attempts = sub.add_parser("attempts", help="list every attempt in a run")
+    attempts.add_argument("run_dir", nargs="?", default="runs")
+    attempts.add_argument("--failed", action="store_true",
+                          help="only attempts that failed or could not be checked")
+    attempts.set_defaults(handler=_cmd_attempts)
+
+    attempt = sub.add_parser(
+        "attempt", help="show one attempt: its checks, the judge's reasoning, the evidence"
+    )
+    attempt.add_argument("run_dir")
+    attempt.add_argument("attempt_id")
+    attempt.set_defaults(handler=_cmd_attempt)
 
     dump = sub.add_parser("dump", help="zip a run for inspection or review")
     dump.add_argument("run_dir", nargs="?", default="runs")
@@ -149,9 +166,13 @@ def _cmd_validate(args) -> int:
         print("  attempts. They are blinded, but connect a separate judge before")
         print("  relying on this for a decision.")
 
+    roles = (roster.execution_roles[0],) if args.single else roster.execution_roles
+    if args.single:
+        print(f"\n  Single mode: {roster.assigned(roles[0]).id} assessed on its own.")
+
     print()
     for test in tests:
-        attempts = len(test.tasks) * test.repeats * len(roster.execution_roles)
+        attempts = len(test.tasks) * test.repeats * len(roles)
         print(f"Test     {test.name}: {len(test.tasks)} tasks x {test.repeats} repeats "
               f"= {attempts} attempts")
         for task in test.tasks:
@@ -173,6 +194,7 @@ def _cmd_run(args) -> int:
         tests = [_with_repeats(t, args.repeats) for t in tests]
 
     project = getattr(args, "project", None)
+    roles = (roster.execution_roles[0],) if args.single else None
     results_dir = args.out or (str(project.results_dir) if project else "runs")
     judge_tests = args.judge_tests if args.judge_tests is not None else (
         project.judge_tests if project else 1
@@ -191,6 +213,7 @@ def _cmd_run(args) -> int:
     # what tells us which evidence to capture. Skip it and the run cannot be
     # judged later without being re-run, which defeats the point of deferring.
     project = getattr(args, "project", None)
+    roles = (roster.execution_roles[0],) if args.single else None
     results_dir = args.out or (str(project.results_dir) if project else "runs")
     judge_tests = args.judge_tests if args.judge_tests is not None else (
         project.judge_tests if project else 1
@@ -204,6 +227,7 @@ def _cmd_run(args) -> int:
         results_dir=results_dir,
         judge=judge,
         judge_tests=0 if args.no_judge else judge_tests,
+        roles=roles,
         on_event=None if args.quiet else _progress,
     )
     result = orchestrator.run()
@@ -253,6 +277,49 @@ def _cmd_report(args) -> int:
     if args.markdown:
         print(f"\nWrote {write_markdown(analysis, args.markdown)}")
     return 0
+
+
+def _cmd_attempts(args) -> int:
+    result = _stored_run(args.run_dir)
+    if result is None:
+        return 1
+    shown = [
+        a for a in result.attempts
+        if not args.failed or a.error or (a.judgement and not a.judgement.passed)
+    ]
+    print(f"ATTEMPTS  {len(shown)} of {len(result.attempts)}\n")
+    print(f"  {'ID':<46}{'OUTCOME':<12}{'MODEL':<16}TASK")
+    print("  " + "-" * 76)
+    for a in shown:
+        outcome = "not judged" if a.judgement is None else a.judgement.outcome.value
+        print(f"  {a.id[:45]:<46}{outcome:<12}{a.model_id[:15]:<16}{a.task_id}")
+    if not shown:
+        print("  none")
+    print(f"\n  Inspect one with:  crossbar attempt {args.run_dir} <id>")
+    return 0
+
+
+def _cmd_attempt(args) -> int:
+    result = _stored_run(args.run_dir)
+    if result is None:
+        return 1
+    found = next((a for a in result.attempts if a.id == args.attempt_id), None)
+    if found is None:
+        print(f"error: no attempt {args.attempt_id!r} in {args.run_dir}")
+        print("\nThe attempts in this run:")
+        for a in result.attempts:
+            print(f"  {a.id}")
+        return 1
+    print(render_attempt(found))
+    return 0
+
+
+def _stored_run(run_dir: str):
+    path = Path(run_dir) / "run.json"
+    if not path.exists():
+        print(f"error: no run found at {run_dir}")
+        return None
+    return load_run(path)
 
 
 def _cmd_dump(args) -> int:

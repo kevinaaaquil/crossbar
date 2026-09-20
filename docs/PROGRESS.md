@@ -33,7 +33,7 @@ test. 515 tests, offline.
 | 10 | `analysis` + `report` | **done** | 48 |
 | 11 | TUI — connect models, run, live queue view, results | **done** | 48 |
 
-**Total tests:** 809
+**Total tests:** 826
 
 ### What is NOT built
 Deliberate. Triggers for each are in [`../CLAUDE.md`](../CLAUDE.md).
@@ -251,6 +251,18 @@ says the user must be *asked* how many Tests to judge when more than one is
 scheduled, and the app was defaulting silently. An unreadable value now means
 **none judged**, not all — judging everything because a field held a typo would
 spend the user's money without being asked.
+
+### CLI parity with the TUI — done
+The terminal app is one front-end, not the product. `crossbar attempts` lists a
+run and `crossbar attempt <id>` shows one in full — checks, the judge's
+reasoning, the evidence it read — and `--single` does from the command line what
+`m` does in the app.
+
+The enabling fix was a layering one: `render_attempt` lived in
+`crossbar.tui.formatting`, so the CLI could not reach it without importing from
+the TUI. It now lives in `crossbar.report`, which both front-ends share, and a
+test asserts the CLI prints exactly what `render_attempt` returns — so the two
+cannot drift into describing a run differently.
 
 ### Config builder and Setup screen — done
 `crossbar.configwriter` turns choices into `.crossbar/config.yaml`, and a Setup

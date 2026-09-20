@@ -522,3 +522,103 @@ class TestTuiEditsTheProjectItOpened:
 
         cli(["tui"], capsys)
         assert built["app"].config_path == inner / ".crossbar" / "config.yaml"
+
+
+class TestEverythingIsReachableWithoutTheTui:
+    """The terminal app is one front-end, not the product. Anything it can show
+    must be reachable from the command line too."""
+
+    def finished_run(self, tmp_path):
+        from crossbar.orchestrator import Orchestrator
+        from tests.test_orchestrator import ROSTER, judge, single_task_test, solving_agent
+
+        Orchestrator(
+            roster=ROSTER, tests=[single_task_test()], results_dir=str(tmp_path),
+            agent_factory=solving_agent, judge=judge(),
+        ).run()
+        return tmp_path
+
+    def an_attempt_id(self, run_dir) -> str:
+        from crossbar.orchestrator import load_run
+
+        return load_run(run_dir / "run.json").attempts[0].id
+
+    def test_attempts_can_be_listed(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        code, out = cli(["attempts", str(run_dir)], capsys)
+        assert code == 0
+        assert "escalate-outage" in out
+        assert "graded" in out
+
+    def test_the_listing_shows_both_models(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        _, out = cli(["attempts", str(run_dir)], capsys)
+        assert "local" in out and "frontier" in out
+
+    def test_one_attempt_can_be_inspected(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        code, out = cli(["attempt", str(run_dir), self.an_attempt_id(run_dir)], capsys)
+        assert code == 0
+        assert "CHECKS" in out
+        assert "OUTCOME" in out
+
+    def test_an_inspected_attempt_shows_the_judges_reasoning(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        _, out = cli(["attempt", str(run_dir), self.an_attempt_id(run_dir)], capsys)
+        assert "REASONING" in out.upper()
+
+    def test_an_inspected_attempt_shows_the_evidence(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        _, out = cli(["attempt", str(run_dir), self.an_attempt_id(run_dir)], capsys)
+        assert "EVIDENCE" in out.upper()
+
+    def test_it_is_the_same_text_the_tui_shows(self, capsys, tmp_path):
+        """One renderer, so the two front-ends cannot describe a run differently."""
+        from crossbar.orchestrator import load_run
+        from crossbar.report import render_attempt
+
+        run_dir = self.finished_run(tmp_path)
+        attempt = load_run(run_dir / "run.json").attempts[0]
+        _, out = cli(["attempt", str(run_dir), attempt.id], capsys)
+        assert render_attempt(attempt) in out
+
+    def test_an_unknown_attempt_lists_what_is_there(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        code, out = cli(["attempt", str(run_dir), "no-such-attempt"], capsys)
+        assert code != 0
+        assert "no-such-attempt" in out
+
+    def test_failures_can_be_singled_out(self, capsys, tmp_path):
+        run_dir = self.finished_run(tmp_path)
+        code, out = cli(["attempts", str(run_dir), "--failed"], capsys)
+        assert code == 0
+        assert "escalate-outage" not in out or "0 of" in out or "none" in out.lower()
+
+    def test_a_missing_run_is_reported(self, capsys, tmp_path):
+        code, out = cli(["attempts", str(tmp_path / "nope")], capsys)
+        assert code != 0
+
+
+class TestModeFromTheCommandLine:
+    """The TUI toggles single and comparison with `m`; the CLI must not need it."""
+
+    def test_single_runs_only_the_first_role(self, capsys, roster_file, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        out_dir = tmp_path / "runs"
+        cli(["run", "--roster", roster_file, "--test", FIXTURE_TEST, "--out", str(out_dir),
+             "--repeats", "1", "--no-judge", "--skip-preflight", "--single"], capsys)
+        data = json.loads((out_dir / "run.json").read_text())
+        assert {a["role"] for a in data["attempts"]} == {"candidate"}
+
+    def test_without_it_both_roles_run(self, capsys, roster_file, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        out_dir = tmp_path / "runs"
+        cli(["run", "--roster", roster_file, "--test", FIXTURE_TEST, "--out", str(out_dir),
+             "--repeats", "1", "--no-judge", "--skip-preflight"], capsys)
+        data = json.loads((out_dir / "run.json").read_text())
+        assert {a["role"] for a in data["attempts"]} == {"candidate", "baseline"}
+
+    def test_validate_says_what_single_would_run(self, capsys, roster_file):
+        _, out = cli(["validate", "--roster", roster_file, "--test", FIXTURE_TEST,
+                      "--single"], capsys)
+        assert "4 attempts" in out or "assessed on its own" in out

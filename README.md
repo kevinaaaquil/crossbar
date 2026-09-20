@@ -244,6 +244,8 @@ is reported without an interval.
 | `crossbar run` | Pre-flight, then run, judge, and print the verdict |
 | `crossbar judge <run>` | Judge a stored run without re-running it |
 | `crossbar report <run>` | Render a stored run (`--json` for machines) |
+| `crossbar attempts <run>` | List every attempt and its outcome (`--failed` to narrow) |
+| `crossbar attempt <run> <id>` | One attempt: its checks, the judge's reasoning, the evidence it read |
 | `crossbar dump <run>` | Zip a run for review |
 | `crossbar doctor` | Check Python, Docker, connectors and your keys |
 | `crossbar tui` | The interactive terminal app |
@@ -283,9 +285,15 @@ Failures stop the run with nothing spent. Warnings — the baseline doubling as
 judge, a test with no probes — are printed and the run continues, because those
 are your call. `--skip-preflight` is there when you know better.
 
+The TUI is one front-end, not the product. Everything it shows is reachable
+from the command line — `crossbar attempts` and `crossbar attempt` render the
+same text the Results tab does, from the same renderer, so the two cannot
+describe a run differently. `--single` does from the CLI what `m` does in the
+app.
+
 ## The terminal app
 
-`crossbar tui` gives you four tabs: the models and their roles, the Tests and
+`crossbar tui` gives you five tabs: the models and their roles, the Tests and
 which will be judged, a **live run view** showing which model is on which Task
 right now and the whole queue behind it, and the results — with a panel per
 Attempt showing its checks, the judge's reasoning, and the evidence it read.
