@@ -129,6 +129,10 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("directory", nargs="?", default=".")
     init.set_defaults(handler=_cmd_init)
 
+    setup = sub.add_parser("setup", help="build the config by being asked, one thing at a time")
+    setup.add_argument("--config", help="which config to write (default: this project's)")
+    setup.set_defaults(handler=_cmd_setup)
+
     tui = sub.add_parser("tui", help="the interactive terminal app")
     _common(tui)
     tui.set_defaults(handler=_cmd_tui)
@@ -393,6 +397,22 @@ def _cmd_init(args) -> int:
     print()
     print(f"Next: edit {PROJECT_DIR}/config.yaml to point at your own models,")
     print("then run:  crossbar validate")
+    return 0
+
+
+def _cmd_setup(args) -> int:
+    from crossbar.cli_setup import run_setup
+    from crossbar.project import find_project
+
+    if args.config:
+        target = Path(args.config)
+    else:
+        root = find_project()
+        target = (root or Path.cwd() / PROJECT_DIR) / PROJECT_CONFIG
+
+    wrote = run_setup(target)
+    if wrote:
+        print("\nNext:  crossbar validate")
     return 0
 
 
