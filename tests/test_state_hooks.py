@@ -618,3 +618,57 @@ class TestARunThroughTheOrchestrator:
         for attempt in result.attempts:
             written = (runs / attempt.state_path).read_text()
             assert written == f"attempt {attempt.repeat} was here"
+
+
+# -- where the starting state comes from -----------------------------------
+
+
+class TestSeed:
+    """An image need not ship with usable state, and often does not: the
+    reference environment's /app/db is empty, because its real database arrives
+    through a bind mount. An eval cannot use that mount -- every Attempt would
+    write to the host's real database -- so the starting state has to be
+    handed in, and restore is already the way to hand state in.
+    """
+
+    def test_a_seed_is_resolved_against_the_environment_file(self, tmp_path):
+        (tmp_path / "seed").mkdir()
+        (tmp_path / "seed" / "library.db").write_bytes(b"x")
+        spec = parse_environment(
+            env(reset="hooks", state={**STATE, "seed": "seed/library.db"}),
+            source=str(tmp_path / "env.yaml"),
+        )
+        assert spec.state.seed == str(tmp_path / "seed" / "library.db")
+
+    def test_no_seed_is_the_default(self):
+        assert parse_environment(env(reset="hooks", state=STATE)).state.seed == ""
+
+    def test_a_seed_that_is_not_there_is_refused_at_parse_time(self, tmp_path):
+        """Not halfway through a run that has already started containers."""
+        with pytest.raises(DomainError, match="seed"):
+            parse_environment(
+                env(reset="hooks", state={**STATE, "seed": "nope.db"}),
+                source=str(tmp_path / "env.yaml"),
+            )
+
+    def test_the_pool_installs_the_seed_before_taking_the_baseline(self, tmp_path):
+        """The baseline must be the seeded world, not the empty one the image
+        happened to ship."""
+        log = []
+        seed = tmp_path / "seed.db"
+        seed.write_text("seeded")
+        spec = EnvironmentSpec(
+            kind="docker", image="img", connectors=(), reset="hooks",
+            state=StateSpec(**STATE, seed=str(seed)),
+        )
+        p = pool(log, tmp_path)
+        p.release(p.acquire(spec), "a1")
+        p.close()
+        assert log[:3] == ["env1:start", "env1:restore(seeded)", "env1:snapshot"]
+
+    def test_without_a_seed_nothing_is_restored_first(self, tmp_path):
+        log = []
+        p = pool(log, tmp_path)
+        p.release(p.acquire(HOOKED), "a1")
+        p.close()
+        assert log[:2] == ["env1:start", "env1:snapshot"]

@@ -194,6 +194,56 @@ The bundled `crossbar.demo.tickets_server` is a complete, small example.
 
 ---
 
+### If your server keeps state, declare the hooks
+
+`reset: recreate` gives every Attempt its own container. Correct, and it pays
+the image's start cost every time and throws away the one artefact the Attempt
+produced — the state it actually wrote.
+
+An Environment whose server keeps state of its own can hand that state out and
+take it back instead:
+
+```yaml
+kind: docker
+image: your-image:latest
+reset: hooks
+
+state:
+  dir: /app/db                    # everything durable lives here
+  snapshot_dir: /app/snapshots    # never inside dir
+  snapshot: hooks/snapshot.sh     # prints the path it wrote, last line
+  restore: hooks/restore.sh       # installs the first file in snapshot_dir
+  seed: seed/library.db           # optional, relative to this file
+  restart_after_restore: false    # true if the server caches state across calls
+```
+
+crossbar then runs one container for the whole Test: it installs the seed,
+takes a baseline, and after each Attempt keeps that Attempt's end state and
+puts the baseline back. Each Attempt's state lands under `state/<attempt-id>/`
+in the results directory, and the Attempt records where.
+
+**`seed` is usually not optional in practice.** Images commonly ship with an
+empty state directory because their real data arrives through a bind mount, and
+an eval cannot use that mount — every Attempt would write to your real store.
+Point `seed` at a state file in your Test and crossbar installs it before the
+baseline is taken. Without it, the baseline is whatever empty store the image
+shipped, and every Attempt starts from nothing.
+
+Two rules the hooks must follow, because crossbar relies on both:
+
+- **`snapshot` prints the path it wrote as its last line.** crossbar copies out
+  what the hook names, and keeps the hook's filename — it cannot know whether
+  this store's state is a `.db`, a `.dump` or a `.tar`.
+- **`restore` takes the first file in the snapshot directory by name.** crossbar
+  empties that directory and leaves exactly one file there, so "first" is never
+  ambiguous. The hook must not tidy the directory itself: those are restore
+  points, and a hook that cleaned them would destroy what it was asked to read.
+
+A consistent copy matters. For SQLite that is `sqlite3 .backup`, not `cp`: a
+`cp` mid-write can capture a torn page or miss a hot journal.
+
+---
+
 ### An Environment must not bake in the date it was built
 
 If your image seeds a database, anything it computes at **build** time is frozen

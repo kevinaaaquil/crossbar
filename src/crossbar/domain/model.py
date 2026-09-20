@@ -79,6 +79,15 @@ class StateSpec:
     ``snapshot_dir`` as the live state. Validates before installing: a
     half-applied restore is worse than a refused one."""
 
+    seed: str = ""
+    """State to install before the baseline is taken, as an absolute path.
+
+    An image need not ship with usable state, and often does not -- the state
+    directory is commonly empty because the real data arrives through a bind
+    mount. An eval cannot use that mount: every Attempt would write to the
+    host's real store. So the starting state is handed in instead, through the
+    restore hook, which is already the way state gets handed in."""
+
     restart_after_restore: bool = False
     """True when the server caches state across calls, so replacing the file
     under it is not enough. crossbar restarts the container around a restore

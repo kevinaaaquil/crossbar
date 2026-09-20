@@ -55,6 +55,10 @@ class EnvironmentPool:
             environment = self._build(spec)
             handle = environment.start()
             hooks = environment.state_hooks()
+            if spec.state.seed:
+                # Before the baseline, not after: the baseline has to be the
+                # seeded world, not whatever empty store the image shipped.
+                hooks.restore(Path(spec.state.seed))
             baseline = hooks.snapshot(self.state_dir / "baseline" / str(key))
             self._live[key] = (environment, handle, hooks, baseline)
         environment, handle, hooks, _ = self._live[key]

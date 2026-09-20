@@ -110,8 +110,23 @@ def _parse_state(raw: Any, reset: str, source: str) -> "StateSpec | None":
             f"{state_dir!r}; a snapshot written there is a second state file",
         )
 
+    seed = str(raw.get("seed") or "").strip()
+    if seed:
+        # Relative to the environment file, like everything else a Test names.
+        base = Path(source).parent if source and source != "<memory>" else Path(".")
+        resolved = (base / seed) if not Path(seed).is_absolute() else Path(seed)
+        if not resolved.is_file():
+            _fail(
+                source,
+                f"the state 'seed' {seed!r} is not a file at {resolved}; it is "
+                "restored before the baseline is taken, so a run would fail "
+                "with every Attempt starting from an empty store",
+            )
+        seed = str(resolved)
+
     return StateSpec(
         dir=state_dir,
+        seed=seed,
         snapshot_dir=snapshot_dir,
         snapshot=str(raw["snapshot"]),
         restore=str(raw["restore"]),
