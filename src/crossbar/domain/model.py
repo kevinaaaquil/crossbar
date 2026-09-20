@@ -79,6 +79,15 @@ class StateSpec:
     ``snapshot_dir`` as the live state. Validates before installing: a
     half-applied restore is worse than a refused one."""
 
+    dump: str = ""
+    """Optional executable, run with no arguments, printing the current state
+    as text on stdout.
+
+    A snapshot is bytes -- a SQLite file, a pg_dump, a tarball -- and a judge
+    is a language model. The environment is the only thing that knows how to
+    render its own state, so it does it, and crossbar stays ignorant of the
+    format. `sqlite3 .dump`, `pg_dump --format=plain`, `tar -tv`."""
+
     seed: str = ""
     """State to install before the baseline is taken, as an absolute path.
 

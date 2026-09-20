@@ -20,6 +20,18 @@ from crossbar.environment import build_environment as _build_environment
 
 
 @dataclass
+class Released:
+    """What an Attempt left behind, once it has let the Environment go."""
+
+    state_path: Path | None = None
+    """The Attempt's end state, kept as a file."""
+
+    dump: str = ""
+    """The same state as text, if the Environment can render it. This is what
+    a judge can actually read."""
+
+
+@dataclass
 class Lease:
     """One Attempt's hold on an Environment."""
 
@@ -64,22 +76,21 @@ class EnvironmentPool:
         environment, handle, hooks, _ = self._live[key]
         return Lease(spec, environment, handle, hooks=hooks, ephemeral=False)
 
-    def release(self, lease: Lease, attempt_id: str) -> Path | None:
-        """Finish with an Environment, and keep what the Attempt left behind.
-
-        Returns the path to that Attempt's end state, or None when the
-        Environment has no hooks to ask.
-        """
+    def release(self, lease: Lease, attempt_id: str) -> Released:
+        """Finish with an Environment, and keep what the Attempt left behind."""
         if lease.ephemeral:
             lease.environment.stop()
-            return None
+            return Released()
 
         kept = lease.hooks.snapshot(self.state_dir / attempt_id)
+        # Before the restore, necessarily: afterwards it would describe the
+        # baseline rather than what this Attempt did.
+        dumped = lease.hooks.dump()
         # Put the baseline back last: a failure above must not leave the next
         # Attempt starting in this one's world.
         _, _, _, baseline = self._live[id(lease.spec)]
         lease.hooks.restore(baseline)
-        return kept
+        return Released(state_path=kept, dump=dumped)
 
     def close(self) -> None:
         for environment, _, _, _ in self._live.values():

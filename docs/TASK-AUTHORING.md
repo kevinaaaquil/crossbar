@@ -213,6 +213,7 @@ state:
   snapshot_dir: /app/snapshots    # never inside dir
   snapshot: hooks/snapshot.sh     # prints the path it wrote, last line
   restore: hooks/restore.sh       # installs the first file in snapshot_dir
+  dump: hooks/dump.sh             # optional: the state as text, for the judge
   seed: seed/library.db           # optional, relative to this file
   restart_after_restore: false    # true if the server caches state across calls
 ```
@@ -241,6 +242,24 @@ Two rules the hooks must follow, because crossbar relies on both:
 
 A consistent copy matters. For SQLite that is `sqlite3 .backup`, not `cp`: a
 `cp` mid-write can capture a torn page or miss a hot journal.
+
+**`dump` is what lets a judge grade on state.** A snapshot is bytes — a SQLite
+file, a `pg_dump`, a tarball — and a judge is a language model, which cannot
+read any of those. Your environment is the only thing that knows how to render
+its own state, so it does:
+
+```sh
+#!/bin/sh
+sqlite3 "$(working_db)" .dump      # or pg_dump --format=plain, or tar -tv
+```
+
+crossbar takes it after the Attempt and before the baseline goes back, and
+hands it to the judge alongside the probe results, labelled "the environment's
+state after the attempt". For the reference environment that turns 118KB of
+pages into 211 lines of SQL the judge can read line by line.
+
+Without `dump`, the judge still works — it grades from your read-only probes —
+but it only sees what those probes expose. With it, it sees the world.
 
 ---
 

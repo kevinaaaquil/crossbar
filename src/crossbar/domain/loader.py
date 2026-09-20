@@ -126,6 +126,7 @@ def _parse_state(raw: Any, reset: str, source: str) -> "StateSpec | None":
 
     return StateSpec(
         dir=state_dir,
+        dump=str(raw.get("dump") or ""),
         seed=seed,
         snapshot_dir=snapshot_dir,
         snapshot=str(raw["snapshot"]),

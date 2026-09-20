@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 import traceback
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -20,7 +20,7 @@ from crossbar.connectors import build_connector
 from crossbar.domain import Role, Task, Test
 from crossbar.environment import build_environment
 from crossbar.orchestrator.pool import EnvironmentPool
-from crossbar.evidence import Evidence, capture
+from crossbar.evidence import Evidence, EvidenceItem, EvidenceRequest, capture
 from crossbar.judging import (
     CheckPlan,
     Judgement,
@@ -269,12 +269,16 @@ class Orchestrator:
                 # baseline back, so it has to happen even when the Attempt
                 # failed -- otherwise the next one starts in this one's world.
                 try:
-                    kept = pool.release(lease, attempt.id)
+                    released = pool.release(lease, attempt.id)
                 except Exception as exc:  # pragma: no cover - reported, not raised
-                    kept = None
+                    released = None
                     attempt.error = attempt.error or f"releasing the environment failed: {exc}"
-                if kept is not None:
-                    attempt.state_path = str(Path(kept).relative_to(self.results_dir))
+                if released is not None and released.state_path is not None:
+                    attempt.state_path = str(
+                        Path(released.state_path).relative_to(self.results_dir)
+                    )
+                if released is not None and released.dump:
+                    attempt.evidence = _with_state(attempt.evidence, released.dump)
 
         attempt.wall_time_s = time.monotonic() - started
         if attempt.trajectory is not None:
@@ -450,3 +454,22 @@ def build_agent(model):
             auth=model.auth,
         )
     return ModelAgent(model.id, build_provider(model))
+
+
+def _with_state(evidence: Evidence | None, dump: str) -> Evidence:
+    """Add the environment's end state to what the judge will read.
+
+    Carries no identity, like everything else in an Evidence payload: the judge
+    is blinded structurally, and a state dump is no exception.
+    """
+    item = EvidenceItem(
+        request=EvidenceRequest(
+            label="the environment's state after the attempt",
+            connector="state",
+            probe="dump",
+        ),
+        content=dump,
+    )
+    if evidence is None:
+        return Evidence(final_answer="", items=(item,))
+    return replace(evidence, items=(*evidence.items, item))

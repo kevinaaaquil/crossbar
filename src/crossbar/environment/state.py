@@ -57,6 +57,20 @@ class StateHooks:
         self.files.copy_out(remote, local)
         return local
 
+    def dump(self) -> str:
+        """The current state as text, for something that has to read it.
+
+        Never raises. A missing observation is a reason the judge is told, in
+        the same spirit as evidence capture: an Attempt that ran is not undone
+        by a hook that could not describe the world afterwards.
+        """
+        if not self.spec.dump:
+            return ""
+        try:
+            return (self.run([self.spec.dump], "the dump hook") or "").strip()
+        except Exception as exc:
+            return f"the dump hook failed: {exc}"
+
     def restore(self, source: Path) -> None:
         """Install ``source`` as the live state.
 

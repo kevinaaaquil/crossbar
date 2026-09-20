@@ -12,6 +12,7 @@ The contract these tests hold crossbar to is the one in the reference
 environment's docs/state-hooks.md.
 """
 
+import json
 import pytest
 
 from crossbar.domain import EnvironmentSpec, StateSpec
@@ -325,6 +326,12 @@ class RecordingEnv:
 
             def restore(self, source):
                 env.log.append(f"{env.name}:restore({Path(source).read_text()})")
+
+            def dump(self):
+                if not env.spec.state.dump:
+                    return ""
+                env.log.append(f"{env.name}:dump")
+                return f"dumped state {env.snapshots}"
 
         return Hooks()
 
@@ -693,3 +700,84 @@ class TestTheDump:
         with zipfile.ZipFile(archive) as z:
             assert "state/a1/snapshot.db" in z.namelist()
             assert z.read("state/a1/snapshot.db") == b"the end state"
+
+
+# -- the dump hook: state the judge can actually read ----------------------
+
+
+class TestDumpHook:
+    """A snapshot is bytes -- 118KB of SQLite pages for the reference
+    environment -- and the judge is a language model. The environment is the
+    only thing that knows how to render its own state, so it does: one more
+    executable, alongside snapshot and restore, printing text.
+    """
+
+    def test_it_is_optional(self):
+        assert parse_environment(env(reset="hooks", state=STATE)).state.dump == ""
+
+    def test_it_is_parsed(self):
+        spec = parse_environment(
+            env(reset="hooks", state={**STATE, "dump": "hooks/dump.sh"})
+        )
+        assert spec.state.dump == "hooks/dump.sh"
+
+    def test_the_hook_output_is_the_dump(self):
+        runner = FakeRunner({"hooks/dump.sh": ("INSERT INTO books VALUES(1);\n", 0, "")})
+        h = hooks(runner, spec=StateSpec(**STATE, dump="hooks/dump.sh"))
+        assert h.dump() == "INSERT INTO books VALUES(1);"
+
+    def test_no_hook_means_no_dump(self):
+        assert hooks().dump() == ""
+
+    def test_a_failing_dump_hook_does_not_sink_the_attempt(self):
+        """Evidence capture never raises: a missing observation is a reason the
+        judge is told, not a crashed run."""
+        runner = FakeRunner({"hooks/dump.sh": ("", 1, "sqlite3: not found")})
+        h = hooks(runner, spec=StateSpec(**STATE, dump="hooks/dump.sh"))
+        assert "sqlite3: not found" in h.dump()
+
+
+class TestTheDumpReachesTheJudge:
+    def test_release_returns_the_dump_with_the_kept_state(self, tmp_path):
+        spec = EnvironmentSpec(
+            kind="docker", image="img", connectors=(), reset="hooks",
+            state=StateSpec(**STATE, dump="hooks/dump.sh"),
+        )
+        p = pool([], tmp_path)
+        released = p.release(p.acquire(spec), "a1")
+        p.close()
+        assert released.state_path is not None
+        assert released.dump == "dumped state 2"  # the baseline was the first
+
+    def test_the_dump_is_taken_before_the_baseline_goes_back(self, tmp_path):
+        """After the restore it would describe the baseline, not the Attempt."""
+        log = []
+        spec = EnvironmentSpec(
+            kind="docker", image="img", connectors=(), reset="hooks",
+            state=StateSpec(**STATE, dump="hooks/dump.sh"),
+        )
+        p = pool(log, tmp_path)
+        p.release(p.acquire(spec), "a1")
+        p.close()
+        assert log.index("env1:dump") < log.index("env1:restore(state 1)")
+
+    def test_an_attempt_carries_the_dump_as_evidence(self, tmp_path):
+        from crossbar.domain import Role
+        from crossbar.evidence import Evidence, EvidenceItem, EvidenceRequest
+        from crossbar.orchestrator.results import Attempt
+
+        attempt = Attempt(
+            id="a1", test_name="t", task_id="task", model_id="m",
+            role=Role.CANDIDATE, repeat=0,
+            evidence=Evidence(final_answer="", items=(
+                EvidenceItem(
+                    request=EvidenceRequest(
+                        label="the environment's state after the attempt",
+                        connector="state", probe="dump",
+                    ),
+                    content="INSERT INTO books VALUES(24,'Attempt 1');",
+                ),
+            )),
+        )
+        rendered = attempt.evidence.to_dict()
+        assert "Attempt 1" in json.dumps(rendered)
