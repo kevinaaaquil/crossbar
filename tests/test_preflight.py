@@ -5,7 +5,7 @@ import pytest
 
 from crossbar.domain import ConnectorConfig, EnvironmentSpec, Task, Test
 from crossbar.preflight import Status, preflight
-from crossbar.roster import parse_roster
+from crossbar.roster import RosterError, parse_roster
 
 PY = sys.executable
 
@@ -282,3 +282,46 @@ class TestAgentCliPreflight:
     def test_a_roster_with_no_cli_models_skips_the_check(self):
         names = {c.name for c in preflight(roster(), [a_test()], start_environments=False).checks}
         assert "agent-cli" not in names
+
+
+class TestSubscriptionCli:
+    """A subscription login is a legitimate way to connect the Claude CLI, but
+    it costs the isolation `--bare` buys, and the report must not pretend
+    otherwise."""
+
+    def _roster(self, auth):
+        return parse_roster(
+            {
+                "models": [
+                    {"id": "cc", "provider": "claude-cli", "model": "opus",
+                     "auth": auth},
+                    {"id": "other", "provider": "openai", "model": "m",
+                     "base_url": "http://localhost:1/v1"},
+                ],
+                "roles": {"candidate": "other", "judge": "cc"},
+            }
+        )
+
+    def test_a_subscription_cli_does_not_need_an_api_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        report = preflight(self._roster("subscription"), [], start_environments=False)
+        check = next(c for c in report.checks if c.name == "agent-cli")
+        assert check.status is not Status.FAIL
+
+    def test_an_api_key_cli_still_needs_one(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        report = preflight(self._roster("api-key"), [], start_environments=False)
+        check = next(c for c in report.checks if c.name == "agent-cli")
+        assert check.status is Status.FAIL
+        assert "ANTHROPIC_API_KEY" in check.detail
+
+    def test_a_subscription_cli_is_warned_about(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        report = preflight(self._roster("subscription"), [], start_environments=False)
+        check = next(c for c in report.checks if c.name == "agent-cli")
+        assert check.status is Status.WARN
+        assert "CLAUDE.md" in check.detail
+
+    def test_an_unknown_auth_is_refused_by_the_loader(self):
+        with pytest.raises(RosterError, match="auth"):
+            self._roster("sorcery")

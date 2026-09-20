@@ -303,3 +303,26 @@ class TestTestDirectories:
         assert any("tests/nope" in s for s in prompter.shown)
         draft = draft_from_config(config_path(tmp_path))
         assert list(draft.tests) == ["tests/support-triage"]
+
+
+class TestSubscriptionPreset:
+    def test_it_does_not_ask_for_a_key_it_will_not_use(self, tmp_path):
+        """A subscription login has no environment variable behind it, and
+        asking for one invites somebody to paste a key that is never read."""
+        names = list(__import__("crossbar.configwriter", fromlist=["PRESETS"]).PRESETS)
+        choice = str(names.index("claude-code-subscription") + 1)
+        prompter = FakePrompter(
+            [
+                choice, "cc", "opus", "claude", "15", "75",
+                "y",
+                "2", "local", "qwen3", "", "", "0", "0",
+                "n",
+                "local", "", "cc",
+                "tests/support-triage", "1", "1", "y",
+            ]
+        )
+        run_setup(config_path(tmp_path), prompter=prompter)
+        # Once, for the vLLM model -- never for the subscription one.
+        asked = [q for q in prompter.asked if "NAME of the environment variable" in q]
+        assert len(asked) == 1
+        assert draft_from_config(config_path(tmp_path)).model("cc").auth == "subscription"

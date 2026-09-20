@@ -28,6 +28,9 @@ class ModelDraft:
     base_url: str = ""
     api_key_env: str = ""
     command: str = "claude"
+    auth: str = "api-key"
+    """Agent CLIs only: ``api-key`` (runs --bare) or ``subscription`` (an OAuth
+    login, which --bare will not read)."""
     input_price: float = 0.0
     output_price: float = 0.0
     max_tokens: int | None = None
@@ -74,6 +77,7 @@ class Preset:
     kind: str
     base_url: str = ""
     api_key_env: str = ""
+    auth: str = "api-key"
     hint: str = ""
 
 
@@ -114,11 +118,19 @@ PRESETS: dict[str, Preset] = {
         api_key_env="ANTHROPIC_API_KEY",
     ),
     "claude-code": Preset(
-        label="Claude Code CLI (the shipped agent)",
+        label="Claude Code CLI (the shipped agent, with an API key)",
         kind="claude-cli",
         api_key_env="ANTHROPIC_API_KEY",
         hint="Brings its own harness, so results are a product comparison. "
              "Runs with --bare, which needs ANTHROPIC_API_KEY.",
+    ),
+    "claude-code-subscription": Preset(
+        label="Claude Code CLI (the shipped agent, on your subscription)",
+        kind="claude-cli",
+        auth="subscription",
+        hint="Uses your OAuth login, so no API key. --bare cannot read that "
+             "login, so hooks and skills are switched off by flag instead and "
+             "a global CLAUDE.md still reaches the model.",
     ),
     "custom": Preset(
         label="Something else (OpenAI-compatible)",
@@ -139,6 +151,7 @@ def preset(name: str, model_id: str, model: str) -> ModelDraft:
         model=model,
         base_url=chosen.base_url,
         api_key_env=chosen.api_key_env,
+        auth=chosen.auth,
     )
 
 
@@ -258,6 +271,10 @@ def _render_model(model: ModelDraft) -> list[str]:
         lines.append(f"    base_url: {model.base_url}")
     if model.drives_itself and model.command:
         lines.append(f"    command: {model.command}")
+    if model.drives_itself and model.auth != "api-key":
+        lines.append(
+            f"    auth: {model.auth}        # an OAuth login, so no --bare and no key"
+        )
     if model.api_key_env:
         lines.append(
             f"    api_key_env: {model.api_key_env}   # the NAME of a variable, never the key"
@@ -312,6 +329,7 @@ def draft_from_config(path: str | os.PathLike[str]) -> ConfigDraft:
                 base_url=str(entry.get("base_url") or ""),
                 api_key_env=str(entry.get("api_key_env") or ""),
                 command=str(entry.get("command") or "claude"),
+                auth=str(entry.get("auth") or "api-key"),
                 input_price=float(price.get("input_per_mtok") or 0.0),
                 output_price=float(price.get("output_per_mtok") or 0.0),
                 max_tokens=entry.get("max_tokens"),

@@ -31,6 +31,9 @@ MCP_TOOL_PREFIX = "mcp__"
 BUILTIN_SERVER = "cli-builtin"
 
 
+AUTH_KINDS = ("api-key", "subscription")
+
+
 class CliAgent:
     """Runs an agent CLI in print mode with only the Task's MCP servers attached."""
 
@@ -41,14 +44,25 @@ class CliAgent:
         model_id: str,
         model: str | None = None,
         claude_bin: str = "claude",
-        bare: bool = True,
+        auth: str = "api-key",
+        bare: bool | None = None,
         permission_mode: str = "bypassPermissions",
         extra_args: Sequence[str] = (),
     ) -> None:
         self.id = model_id
         self.model = model
         self.claude_bin = claude_bin
-        self.bare = bare
+        if auth not in AUTH_KINDS:
+            raise ValueError(
+                f"unknown auth {auth!r} for the claude CLI; use one of "
+                + ", ".join(sorted(AUTH_KINDS))
+            )
+        self.auth = auth
+        """How the CLI authenticates. ``api-key`` uses ANTHROPIC_API_KEY and
+        runs ``--bare``. ``subscription`` uses the operator's OAuth login, which
+        ``--bare`` refuses to read -- see ``bare`` below."""
+
+        self.bare = (auth == "api-key") if bare is None else bare
         """Run with `--bare`: no hooks, no skills, no auto-memory, no plugin
         sync. Without it the operator's own configuration joins the run — on a
         real machine this fired SessionStart hooks and burned two turns loading
@@ -58,7 +72,8 @@ class CliAgent:
 
         The cost: `--bare` reads Anthropic credentials only from
         ANTHROPIC_API_KEY, never from an OAuth session, so a subscription login
-        is not enough.
+        is not enough. ``auth="subscription"`` trades it away and shuts off by
+        flag what it can -- see `_argv`.
         """
         self.permission_mode = permission_mode
         self.extra_args = list(extra_args)
@@ -109,6 +124,15 @@ class CliAgent:
         argv = [self.claude_bin]
         if self.bare:
             argv.append("--bare")
+        else:
+            # Without --bare the operator's environment comes along. Measured
+            # against the real CLI (2.1.274), these two take out the hooks and
+            # the skills; a global CLAUDE.md still loads, and there is no flag
+            # for it, so the report says so rather than pretending otherwise.
+            argv += [
+                "--disable-slash-commands",
+                "--settings", json.dumps({"disableAllHooks": True}),
+            ]
         argv += [
             "-p", task.prompt,
             "--output-format", "stream-json",

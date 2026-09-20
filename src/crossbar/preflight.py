@@ -138,11 +138,16 @@ def _check_judge(roster: Roster) -> Check:
 def _check_agent_clis(roster: Roster) -> Check | None:
     """Agent CLIs have to exist, and to be able to authenticate.
 
-    crossbar runs them with `--bare` so the operator's own hooks, skills and
-    memory do not join the measurement — and `--bare` reads Anthropic
-    credentials only from ANTHROPIC_API_KEY, never from an OAuth session. A
-    subscription login is not enough, and without the key every Attempt fails
-    identically with "Not logged in".
+    With ``auth: api-key`` crossbar runs them with `--bare` so the operator's
+    own hooks, skills and memory do not join the measurement — and `--bare`
+    reads Anthropic credentials only from ANTHROPIC_API_KEY, never from an OAuth
+    session. A subscription login is not enough there, and without the key every
+    Attempt fails identically with "Not logged in".
+
+    With ``auth: subscription`` there is no key to check, but `--bare` is gone.
+    Hooks and skills are shut off by flag; a global CLAUDE.md is not, and there
+    is no flag for it. That is a warning, not a failure: it is a real way to
+    run, and the person running it should know what is in the room.
     """
     cli_models = [m for m in roster.models if m.drives_itself]
     if not cli_models:
@@ -152,13 +157,26 @@ def _check_agent_clis(roster: Roster) -> Check | None:
     for model in cli_models:
         if shutil.which(model.command) is None and "/" not in model.command:
             problems.append(f"{model.id}: {model.command!r} is not on PATH")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    keyed = [m for m in cli_models if not m.uses_subscription]
+    if keyed and not os.environ.get("ANTHROPIC_API_KEY"):
         problems.append(
             "ANTHROPIC_API_KEY is not set, and crossbar runs the CLI with --bare, "
             "which ignores an OAuth login"
         )
     if problems:
         return Check("agent-cli", Status.FAIL, "; ".join(problems))
+
+    on_subscription = [m for m in cli_models if m.uses_subscription]
+    if on_subscription:
+        names = ", ".join(m.id for m in on_subscription)
+        return Check(
+            "agent-cli",
+            Status.WARN,
+            f"{names} runs on a subscription login, so it cannot use --bare. "
+            "Hooks and skills are switched off, but a global CLAUDE.md still "
+            "reaches it — this measures your machine's Claude Code as well as "
+            "the model",
+        )
     return Check(
         "agent-cli",
         Status.OK,

@@ -105,6 +105,42 @@ class TestInvocation:
         CliAgent("cc", claude_bin=fake.binary, bare=False).run(make_task(), connectors)
         assert "--bare" not in fake.argv()
 
+class TestSubscriptionAuth:
+    """`--bare` never reads OAuth, so a subscription login cannot run under it.
+    Dropping it brings the operator's environment along, so what can be shut
+    off by flag must be -- measured against the real CLI, 2.1.274."""
+
+    def test_a_subscription_run_drops_bare(self, fake, connectors):
+        CliAgent("cc", claude_bin=fake.binary, auth="subscription").run(
+            make_task(), connectors
+        )
+        assert "--bare" not in fake.argv()
+
+    def test_it_shuts_off_the_hooks_and_skills_that_bare_would_have(
+        self, fake, connectors
+    ):
+        CliAgent("cc", claude_bin=fake.binary, auth="subscription").run(
+            make_task(), connectors
+        )
+        argv = fake.argv()
+        assert "--disable-slash-commands" in argv
+        settings = json.loads(argv[argv.index("--settings") + 1])
+        assert settings["disableAllHooks"] is True
+
+    def test_an_api_key_run_is_still_bare(self, fake, connectors):
+        CliAgent("cc", claude_bin=fake.binary, auth="api-key").run(
+            make_task(), connectors
+        )
+        argv = fake.argv()
+        assert "--bare" in argv
+        assert "--disable-slash-commands" not in argv
+
+    def test_an_unknown_auth_is_refused(self, fake, connectors):
+        with pytest.raises(ValueError, match="auth"):
+            CliAgent("cc", claude_bin=fake.binary, auth="sorcery")
+
+
+class TestArgvRest:
     def test_only_the_tasks_mcp_servers_are_offered(self, fake, connectors):
         CliAgent("cc", claude_bin=fake.binary).run(make_task(), connectors)
         assert "--strict-mcp-config" in fake.argv()
@@ -296,3 +332,22 @@ class TestItReallyDrivesTheServers:
             assert ticket["priority"] == "urgent"
         finally:
             fresh.teardown()
+
+
+class TestBuiltFromTheRoster:
+    def test_a_subscription_model_builds_a_subscription_agent(self):
+        from crossbar.orchestrator.runner import build_agent
+        from crossbar.roster import ModelSpec
+
+        agent = build_agent(
+            ModelSpec(id="cc", provider="claude-cli", model="opus", auth="subscription")
+        )
+        assert agent.auth == "subscription"
+        assert agent.bare is False
+
+    def test_the_default_model_still_runs_bare(self):
+        from crossbar.orchestrator.runner import build_agent
+        from crossbar.roster import ModelSpec
+
+        agent = build_agent(ModelSpec(id="cc", provider="claude-cli", model="opus"))
+        assert agent.bare is True

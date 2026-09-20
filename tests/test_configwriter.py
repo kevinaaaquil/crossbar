@@ -295,3 +295,48 @@ class TestOptionalNumericSettings:
         model = back.model("k")
         assert model.max_tokens == 8192
         assert model.temperature == 0.3
+
+
+class TestAgentCliAuth:
+    def test_a_subscription_model_is_written_out(self):
+        draft = ConfigDraft(
+            models=(
+                ModelDraft(id="cc", kind="claude-cli", model="opus",
+                           auth="subscription"),
+                ModelDraft(id="m", kind="openai", model="x",
+                           base_url="http://localhost:1/v1"),
+            ),
+            candidate="m", judge="cc", tests=("tests/t",),
+        )
+        text = render_config(draft)
+        assert "auth: subscription" in text
+        # A subscription login has no key to name, and naming one would be a lie
+        # about where the credentials come from.
+        assert "ANTHROPIC_API_KEY" not in text
+
+    def test_an_api_key_model_does_not_say_auth(self):
+        draft = ConfigDraft(
+            models=(
+                ModelDraft(id="cc", kind="claude-cli", model="opus",
+                           api_key_env="ANTHROPIC_API_KEY"),
+                ModelDraft(id="m", kind="openai", model="x",
+                           base_url="http://localhost:1/v1"),
+            ),
+            candidate="m", judge="cc", tests=("tests/t",),
+        )
+        text = render_config(draft)
+        assert "auth:" not in text
+
+    def test_it_round_trips(self, tmp_path):
+        draft = ConfigDraft(
+            models=(
+                ModelDraft(id="cc", kind="claude-cli", model="opus",
+                           auth="subscription"),
+                ModelDraft(id="m", kind="openai", model="x",
+                           base_url="http://localhost:1/v1"),
+            ),
+            candidate="m", judge="cc", tests=("tests/t",),
+        )
+        target = tmp_path / "config.yaml"
+        write_config(draft, target)
+        assert draft_from_config(target).model("cc").auth == "subscription"

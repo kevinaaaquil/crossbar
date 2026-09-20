@@ -18,6 +18,8 @@ from crossbar.domain import Role
 from crossbar.providers import AnthropicProvider, OpenAICompatProvider, Provider, Usage
 
 PROVIDER_KINDS = ("openai", "anthropic", "claude-cli")
+AUTH_KINDS = ("api-key", "subscription")
+"""How an agent CLI authenticates. See ``ModelSpec.auth``."""
 
 
 class RosterError(ValueError):
@@ -45,6 +47,19 @@ class ModelSpec:
     temperature: float | None = None
     command: str = "claude"
     """Agent-CLI models only: the binary to run."""
+
+    auth: str = "api-key"
+    """Agent-CLI models only, and the choice costs something either way.
+
+    ``api-key`` runs the CLI with ``--bare``, which keeps the operator's hooks,
+    skills and memory out of the measurement but reads credentials only from
+    ANTHROPIC_API_KEY. ``subscription`` uses an OAuth login, which ``--bare``
+    never reads -- so hooks and skills are shut off by flag instead, and a
+    global CLAUDE.md still reaches the model."""
+
+    @property
+    def uses_subscription(self) -> bool:
+        return self.drives_itself and self.auth == "subscription"
 
     @property
     def drives_itself(self) -> bool:
@@ -152,6 +167,12 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
                 f"{source}: model {model_id!r} needs a 'base_url' — the "
                 "OpenAI-compatible endpoint it is served from"
             )
+        auth = str(entry.get("auth") or "api-key")
+        if auth not in AUTH_KINDS:
+            raise RosterError(
+                f"{source}: model {model_id!r} has unknown auth {auth!r}; "
+                f"expected one of {list(AUTH_KINDS)}"
+            )
         price = entry.get("price") or {}
         models.append(
             ModelSpec(
@@ -168,6 +189,7 @@ def parse_roster(data: Any, source: str = "<memory>") -> Roster:
                 max_tokens=int(entry.get("max_tokens") or 2048),
                 temperature=entry.get("temperature"),
                 command=str(entry.get("command") or "claude"),
+                auth=auth,
             )
         )
 

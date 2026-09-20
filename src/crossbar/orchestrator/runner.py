@@ -365,10 +365,7 @@ class Orchestrator:
         return connectors
 
     def _default_agent(self, model_id: str, role: Role, task: Task, repeat: int):
-        model = self.roster.model(model_id)
-        if model.drives_itself:
-            return CliAgent(model.id, model=model.model or None, claude_bin=model.command)
-        return ModelAgent(model.id, build_provider(model))
+        return build_agent(self.roster.model(model_id))
 
     def _queue_item(self, test, task, model_id, role, repeat) -> QueueItem | None:
         for item in self.queue:
@@ -412,3 +409,20 @@ def _json(data) -> str:
 
 def _slug(text: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in text).strip("-").lower()
+
+
+def build_agent(model):
+    """The Agent one connected model is run through.
+
+    An agent CLI brings its own harness; everything else is driven through
+    ours. Kept a function so what a config produces can be asserted without
+    standing up an Orchestrator.
+    """
+    if model.drives_itself:
+        return CliAgent(
+            model.id,
+            model=model.model or None,
+            claude_bin=model.command,
+            auth=model.auth,
+        )
+    return ModelAgent(model.id, build_provider(model))

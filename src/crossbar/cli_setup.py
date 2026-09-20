@@ -151,15 +151,24 @@ def _ask_one_model(prompter: Prompter) -> ModelDraft | None:
             drafted, command=prompter.ask("The CLI command to run", default=drafted.command)
         )
 
-    # Saying this every time is worth it: a key pasted here would end up in a
-    # file people commit.
-    drafted = _replace(
-        drafted,
-        api_key_env=prompter.ask(
-            "The NAME of the environment variable holding its key, never the key itself",
-            default=drafted.api_key_env,
-        ),
-    )
+    # A subscription login reads no variable, and asking would invite somebody
+    # to paste a key that is never used.
+    if drafted.auth == "api-key":
+        # Saying this every time is worth it: a key pasted here would end up in
+        # a file people commit.
+        drafted = _replace(
+            drafted,
+            api_key_env=prompter.ask(
+                "The NAME of the environment variable holding its key, "
+                "never the key itself",
+                default=drafted.api_key_env,
+            ),
+        )
+    else:
+        prompter.say(
+            "  Uses your existing login, so there is no key to name. Note it "
+            "cannot run --bare: your global CLAUDE.md reaches it."
+        )
 
     prompter.say("  Prices let the report state what a run costs. Leave at 0 if unknown.")
     return _replace(
