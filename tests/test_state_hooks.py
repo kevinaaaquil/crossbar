@@ -672,3 +672,24 @@ class TestSeed:
         p.release(p.acquire(HOOKED), "a1")
         p.close()
         assert log[:2] == ["env1:start", "env1:snapshot"]
+
+
+class TestTheDump:
+    def test_an_attempts_state_reaches_the_dump(self, tmp_path):
+        """The dump is what a person hands to their own AI for review. The
+        state an Attempt wrote is the most reviewable thing in a run, so it
+        must not be the one thing left out."""
+        import json
+        import zipfile
+
+        from crossbar.dump import create_dump
+
+        runs = tmp_path / "runs"
+        (runs / "state" / "a1").mkdir(parents=True)
+        (runs / "state" / "a1" / "snapshot.db").write_bytes(b"the end state")
+        (runs / "run.json").write_text(json.dumps({"run_id": "r1", "attempts": []}))
+
+        archive = create_dump(runs)
+        with zipfile.ZipFile(archive) as z:
+            assert "state/a1/snapshot.db" in z.namelist()
+            assert z.read("state/a1/snapshot.db") == b"the end state"
