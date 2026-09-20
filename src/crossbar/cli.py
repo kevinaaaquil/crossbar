@@ -343,13 +343,31 @@ def _cmd_doctor(args) -> int:
     print(f"  connectors   {', '.join(sorted(known_connectors()))}")
     print()
 
+    # Inside a project the models come from its config. Looking for roster.yaml
+    # regardless reported a broken setup to somebody whose setup was fine.
+    source = args.roster
+    if source == DEFAULT_ROSTER and not Path(source).exists():
+        try:
+            project = load_project()
+        except ProjectError:
+            project = None
+        if project is not None:
+            roster, source = project.roster, str(project.root / PROJECT_CONFIG)
+            _doctor_models(roster, source)
+            return 0
+
     try:
-        roster = load_roster(args.roster)
+        roster = load_roster(source)
     except RosterError as exc:
         print(f"  roster       {exc}")
         return 0
 
-    print(f"  roster       {args.roster}")
+    _doctor_models(roster, source)
+    return 0
+
+
+def _doctor_models(roster, source: str) -> None:
+    print(f"  roster       {source}")
     for model in roster.models:
         if model.api_key():
             state = "ready"
@@ -365,7 +383,6 @@ def _cmd_doctor(args) -> int:
     for check in report.checks:
         if check.status is not Status.OK:
             print(f"  [{check.status.value.upper()}] {check.name}: {check.detail}")
-    return 0
 
 
 def _cmd_demo(args) -> int:

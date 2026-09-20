@@ -331,6 +331,19 @@ class TestProjectFolderCommands:
         code, out = cli(["validate"], capsys)
         assert "Support triage" in out
 
+    def test_doctor_uses_the_project_when_no_flags_are_given(
+        self, capsys, tmp_path, monkeypatch
+    ):
+        """Inside a project, doctor looked for roster.yaml and reported it
+        missing -- telling you your setup was broken when it was fine."""
+        monkeypatch.chdir(tmp_path)
+        cli(["init"], capsys)
+        capsys.readouterr()
+        code, out = cli(["doctor"], capsys)
+        assert code == 0
+        assert "roster.yaml" not in out
+        assert "my-model" in out
+
     def test_commands_work_from_a_subdirectory(self, capsys, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         cli(["init"], capsys)
