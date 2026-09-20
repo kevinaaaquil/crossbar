@@ -9,10 +9,12 @@ from __future__ import annotations
 import shutil
 import subprocess
 import uuid
+from typing import Sequence
 
 from crossbar.domain import EnvironmentSpec
 from crossbar.environment.base import EnvironmentError_, EnvironmentHandle
 from crossbar.environment.handle import RemoteExec
+from crossbar.environment.state import StateHooks
 
 CONTAINER_WORKSPACE = "/tmp/crossbar-workspace"
 
@@ -69,6 +71,49 @@ class DockerEnvironment:
             remote=RemoteExec(insert_at=len(prefix) - 1),
         )
         return self._handle
+
+    # -- state hooks -------------------------------------------------------
+
+    def state_hooks(self) -> StateHooks | None:
+        """This Environment's snapshot and restore hooks, if it declared any.
+
+        The hooks are scripts inside the image, so they run through `docker
+        exec` and their files move through `docker cp`. Nothing here knows what
+        kind of store is behind them.
+        """
+        if self.spec.state is None:
+            return None
+        return StateHooks(self.spec.state, run=self._run_in_container, files=self)
+
+    def _run_in_container(self, argv: Sequence[str], what: str) -> str:
+        if not self.container_id:
+            raise EnvironmentError_(f"cannot run {what}: the container is not running")
+        proc = self._run(
+            [self.docker_bin, "exec", self.container_id, *argv], what
+        )
+        return proc.stdout or ""
+
+    def copy_out(self, remote: str, local) -> None:
+        self._run(
+            [self.docker_bin, "cp", f"{self.container_id}:{remote}", str(local)],
+            f"copying {remote} out of the container",
+        )
+
+    def copy_in(self, local, remote_dir: str) -> None:
+        self._run(
+            [self.docker_bin, "cp", str(local), f"{self.container_id}:{remote_dir}/"],
+            f"copying {local} into the container",
+        )
+
+    def clear(self, remote_dir: str) -> None:
+        """Empty a directory inside the container, leaving the directory."""
+        self._run(
+            [
+                self.docker_bin, "exec", self.container_id,
+                "find", remote_dir, "-maxdepth", "1", "-type", "f", "-delete",
+            ],
+            f"clearing {remote_dir}",
+        )
 
     def reset(self) -> EnvironmentHandle:
         self.stop()

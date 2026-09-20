@@ -6,6 +6,7 @@ Parsing and validation only. Nothing here executes anything.
 from crossbar.domain.model import (
     ConnectorConfig,
     EnvironmentSpec,
+    StateSpec,
     Limits,
     Role,
     Task,
@@ -17,6 +18,7 @@ __all__ = [
     "ConnectorConfig",
     "DomainError",
     "EnvironmentSpec",
+    "StateSpec",
     "Limits",
     "Role",
     "Task",

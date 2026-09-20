@@ -34,44 +34,6 @@ def docker_spec(**overrides) -> EnvironmentSpec:
     return EnvironmentSpec(kind="docker", connectors=(MCP,), image="demo:latest", **overrides)
 
 
-@pytest.fixture
-def fake_docker(tmp_path):
-    """A stub `docker` binary, so no daemon is needed."""
-    log = tmp_path / "docker.log"
-    script = tmp_path / "docker"
-    script.write_text(
-        textwrap.dedent(
-            f"""\
-            #!/bin/sh
-            echo "$@" >> {log}
-            case "$1" in
-              run) echo "container$$" ;;
-              exec)
-                shift
-                while [ "$1" = "-i" ] || [ "$1" = "-e" ]; do
-                  if [ "$1" = "-e" ]; then shift; fi
-                  shift
-                done
-                shift
-                exec "$@"
-                ;;
-              *) : ;;
-            esac
-            """
-        )
-    )
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-
-    class Handle:
-        binary = str(script)
-
-        @staticmethod
-        def log_text():
-            return log.read_text() if log.exists() else ""
-
-    return Handle
-
-
 class TestLocalEnvironment:
     def test_start_returns_a_handle_with_a_workspace(self):
         env = LocalEnvironment(local_spec())

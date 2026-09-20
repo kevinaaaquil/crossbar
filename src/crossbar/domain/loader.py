@@ -15,6 +15,7 @@ import yaml
 from crossbar.domain.model import (
     ENVIRONMENT_KINDS,
     RESET_POLICIES,
+    StateSpec,
     ConnectorConfig,
     EnvironmentSpec,
     Limits,
@@ -78,6 +79,46 @@ def _parse_limits(raw: Any, source: str) -> Limits:
 # -- environments ----------------------------------------------------------
 
 
+def _parse_state(raw: Any, reset: str, source: str) -> "StateSpec | None":
+    """The state block, and the two ways it can disagree with the reset policy.
+
+    Either half without the other is a config that reads as though it does
+    something and does not, so both are refused rather than warned about.
+    """
+    if raw is None:
+        if reset == "hooks":
+            _fail(source, "reset: hooks needs a 'state' block naming the hooks to run")
+        return None
+    if reset != "hooks":
+        _fail(source, f"a 'state' block only does anything under reset: hooks, not {reset!r}")
+    if not isinstance(raw, Mapping):
+        _fail(source, "'state' must be a mapping")
+
+    required = ("dir", "snapshot_dir", "snapshot", "restore")
+    missing = [key for key in required if not str(raw.get(key) or "").strip()]
+    if missing:
+        _fail(source, f"'state' is missing {', '.join(missing)}")
+
+    state_dir = str(raw["dir"]).rstrip("/") or "/"
+    snapshot_dir = str(raw["snapshot_dir"]).rstrip("/") or "/"
+    # Compared segment-wise: /app/db-snapshots starts with /app/db as a string
+    # but is a sibling, and rejecting it would rule out a legal layout.
+    if snapshot_dir == state_dir or snapshot_dir.startswith(state_dir + "/"):
+        _fail(
+            source,
+            f"the snapshot directory {snapshot_dir!r} is inside the state directory "
+            f"{state_dir!r}; a snapshot written there is a second state file",
+        )
+
+    return StateSpec(
+        dir=state_dir,
+        snapshot_dir=snapshot_dir,
+        snapshot=str(raw["snapshot"]),
+        restore=str(raw["restore"]),
+        restart_after_restore=bool(raw.get("restart_after_restore", False)),
+    )
+
+
 def parse_environment(
     data: Any,
     source: str = "<memory>",
@@ -93,6 +134,8 @@ def parse_environment(
     reset = str(data.get("reset", "recreate"))
     if reset not in RESET_POLICIES:
         _fail(source, f"unknown reset policy {reset!r}, expected one of {list(RESET_POLICIES)}")
+
+    state = _parse_state(data.get("state"), reset, source)
 
     image = data.get("image")
     if kind == "docker" and not image:
@@ -125,6 +168,7 @@ def parse_environment(
         connectors=tuple(connectors),
         image=str(image) if image else None,
         reset=reset,
+        state=state,
         source=source,
     )
 

@@ -8,6 +8,7 @@ from crossbar.environment.handle import EnvironmentHandle, Launch, RemoteExec
 from crossbar.environment.base import Environment, EnvironmentError_
 from crossbar.environment.local import LocalEnvironment
 from crossbar.environment.docker import DockerEnvironment
+from crossbar.environment.state import StateHooks
 from crossbar.environment.factory import build_environment
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "Launch",
     "LocalEnvironment",
     "RemoteExec",
+    "StateHooks",
     "build_environment",
 ]

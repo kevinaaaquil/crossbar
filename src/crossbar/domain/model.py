@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Mapping
 
 ENVIRONMENT_KINDS = ("local", "docker")
-RESET_POLICIES = ("recreate",)
+RESET_POLICIES = ("recreate", "hooks")
 
 
 class Role(Enum):
@@ -52,6 +52,41 @@ class ConnectorConfig:
 
 
 @dataclass(frozen=True)
+class StateSpec:
+    """How an Environment hands its state out and takes it back.
+
+    Declared by environments whose server keeps state of its own -- a database,
+    a file store, a queue. Two executables and one rule about where state
+    lives: everything durable is inside ``dir``, and ``snapshot_dir`` holds
+    copies of it. The hooks are the only store-specific part, which is what
+    lets the same machinery serve SQLite, Postgres or a folder of documents.
+    """
+
+    dir: str
+    """The state directory. Nothing durable lives outside it."""
+
+    snapshot_dir: str
+    """Where snapshots are written and restored from. Never inside ``dir``: a
+    snapshot written there would be a second state file, and the server's next
+    start would delete one of the two."""
+
+    snapshot: str
+    """Executable, run with no arguments. Writes the current state into
+    ``snapshot_dir`` and prints the absolute path it wrote as its last line."""
+
+    restore: str
+    """Executable, run with no arguments. Installs the first file in
+    ``snapshot_dir`` as the live state. Validates before installing: a
+    half-applied restore is worse than a refused one."""
+
+    restart_after_restore: bool = False
+    """True when the server caches state across calls, so replacing the file
+    under it is not enough. crossbar restarts the container around a restore
+    instead -- still cheaper than recreating, since the image is already
+    there."""
+
+
+@dataclass(frozen=True)
 class EnvironmentSpec:
     """Where a Task runs and what the agent may touch."""
 
@@ -59,6 +94,7 @@ class EnvironmentSpec:
     connectors: tuple[ConnectorConfig, ...]
     image: str | None = None
     reset: str = "recreate"
+    state: StateSpec | None = None
     source: str = "<memory>"
 
     def connector(self, name: str) -> ConnectorConfig | None:
