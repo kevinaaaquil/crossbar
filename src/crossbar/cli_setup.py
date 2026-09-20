@@ -56,9 +56,10 @@ def run_setup(config_path: str | os.PathLike[str], prompter: Prompter | None = N
         prompter.say(f"This will write {target}")
     prompter.say()
 
+    existing = _ask_which_to_drop(prompter, existing)
     models = _ask_models(prompter, existing)
     roles = _ask_roles_until_sound(prompter, models)
-    tests = _ask_tests(prompter, existing)
+    tests = _ask_tests(prompter, existing, target.parent)
     run = _ask_run_settings(prompter, existing)
 
     draft = ConfigDraft(models=models, tests=tests, **roles, **run)
@@ -74,6 +75,38 @@ def run_setup(config_path: str | os.PathLike[str], prompter: Prompter | None = N
 
 
 # -- models ----------------------------------------------------------------
+
+
+def _ask_which_to_drop(prompter: Prompter, existing: ConfigDraft) -> ConfigDraft:
+    """Which of the already-connected models to forget.
+
+    ``crossbar init`` writes two placeholder models to show the shape of the
+    file. Without this, a config built entirely by being asked still carries
+    them, because every other question here only ever adds.
+    """
+    if not existing.models:
+        return existing
+    while True:
+        answer = prompter.ask(
+            "Remove any of them? Comma-separated ids, blank to keep all"
+        ).strip()
+        if not answer:
+            return existing
+        wanted = [part.strip() for part in answer.split(",") if part.strip()]
+        known = {m.id for m in existing.models}
+        unknown = [w for w in wanted if w not in known]
+        if unknown:
+            # Silently ignoring a typo here would leave the model in place and
+            # look like it had been removed.
+            prompter.say(f"  Not connected: {', '.join(unknown)}. Nothing removed.")
+            continue
+        kept = [m for m in existing.models if m.id not in set(wanted)]
+        prompter.say(f"  Removed {', '.join(wanted)}.")
+        prompter.say(
+            f"  Connected: {', '.join(m.id for m in kept) or 'nothing'}"
+        )
+        prompter.say()
+        return _replace_draft(existing, {"models": tuple(kept)})
 
 
 def _ask_models(prompter: Prompter, existing: ConfigDraft) -> list[ModelDraft]:
@@ -185,13 +218,25 @@ def _ask_roles_until_sound(prompter: Prompter, models: list[ModelDraft]) -> dict
     return roles
 
 
-def _ask_tests(prompter: Prompter, existing: ConfigDraft) -> list[str]:
+def _ask_tests(
+    prompter: Prompter, existing: ConfigDraft, project_dir: Path
+) -> list[str]:
+    """Test directories, checked against the disk as they are given.
+
+    A directory that is not there is a typo, and this is the moment it is cheap
+    to fix -- not the run it was supposed to precede.
+    """
     prompter.say()
-    answer = prompter.ask(
-        "Test directories, comma separated, relative to .crossbar",
-        default=", ".join(existing.tests),
-    )
-    return [part.strip() for part in answer.split(",") if part.strip()]
+    while True:
+        answer = prompter.ask(
+            "Test directories, comma separated, relative to .crossbar",
+            default=", ".join(existing.tests),
+        )
+        wanted = [part.strip() for part in answer.split(",") if part.strip()]
+        missing = [w for w in wanted if not (project_dir / w).is_dir()]
+        if not missing:
+            return wanted
+        prompter.say(f"  No such directory under {project_dir}: {', '.join(missing)}")
 
 
 def _ask_run_settings(prompter: Prompter, existing: ConfigDraft) -> dict:

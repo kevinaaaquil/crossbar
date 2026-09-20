@@ -37,6 +37,22 @@ def config_path(tmp_path):
     return tmp_path / PROJECT_DIR / CONFIG_NAME
 
 
+def _starter(tmp_path):
+    """The config `crossbar init` writes, placeholder models and all."""
+    from crossbar.project import STARTER_CONFIG
+
+    config_path(tmp_path).write_text(STARTER_CONFIG)
+
+
+@pytest.fixture(autouse=True)
+def a_real_test_directory(tmp_path):
+    """Setup checks Test directories against the disk, and every real project
+    has this one: ``crossbar init`` writes it."""
+    (tmp_path / PROJECT_DIR / "tests" / "support-triage").mkdir(
+        parents=True, exist_ok=True
+    )
+
+
 TWO_MODELS = [
     "2",                      # preset: vLLM
     "local", "qwen3",         # id, model name
@@ -174,7 +190,8 @@ class TestWhatItWrites:
         import shutil
 
         shutil.copytree(example_test_path(),
-                        tmp_path / PROJECT_DIR / "tests" / "support-triage")
+                        tmp_path / PROJECT_DIR / "tests" / "support-triage",
+                        dirs_exist_ok=True)
         run_setup(config_path(tmp_path), FakePrompter(TWO_MODELS))
         assert load_project(tmp_path).tests[0].name == "Support triage"
 
@@ -186,7 +203,8 @@ class TestWhatItWrites:
 
     def test_an_existing_config_is_the_starting_point(self, tmp_path):
         run_setup(config_path(tmp_path), FakePrompter(TWO_MODELS))
-        prompter = FakePrompter(["n", "local", "frontier", "", "tests/support-triage",
+        prompter = FakePrompter(["",  # keep the models it already has
+                                 "n", "local", "frontier", "", "tests/support-triage",
                                  "5", "1", "y"])
         run_setup(config_path(tmp_path), prompter)
         draft = draft_from_config(config_path(tmp_path))
@@ -207,3 +225,81 @@ class TestTheCommand:
         with pytest.raises(SystemExit):
             main(["--help"])
         assert "setup" in capsys.readouterr().out
+
+
+class TestDroppingModels:
+    """`init` writes two placeholder models. Without a way to drop them, every
+    project built by being asked carries junk it never agreed to."""
+
+    def test_a_placeholder_can_be_removed(self, tmp_path):
+        _starter(tmp_path)
+        prompter = FakePrompter(
+            [
+                "my-model",              # drop one placeholder, keep frontier
+                "y",                     # connect a real one
+                "2", "local", "qwen3", "", "", "0", "0",
+                "n",
+                "local", "frontier", "",
+                "tests/support-triage", "3", "1", "y",
+            ]
+        )
+        run_setup(config_path(tmp_path), prompter=prompter)
+        assert any("Remove any" in q for q in prompter.asked)
+        draft = draft_from_config(config_path(tmp_path))
+        assert sorted(m.id for m in draft.models) == ["frontier", "local"]
+
+    def test_removing_every_model_is_allowed_and_you_start_over(self, tmp_path):
+        _starter(tmp_path)
+        prompter = FakePrompter(
+            [
+                "my-model, frontier",
+                "2", "local", "qwen3", "", "", "0", "0",
+                "y",
+                "6", "frontier2", "claude-opus-5", "ANTHROPIC_API_KEY", "15", "75",
+                "n",
+                "local", "frontier2", "",
+                "tests/support-triage", "3", "1", "y",
+            ]
+        )
+        run_setup(config_path(tmp_path), prompter=prompter)
+        draft = draft_from_config(config_path(tmp_path))
+        assert sorted(m.id for m in draft.models) == ["frontier2", "local"]
+
+    def test_an_unknown_id_to_remove_is_reported_not_ignored(self, tmp_path):
+        _starter(tmp_path)
+        prompter = FakePrompter(
+            [
+                "nosuchmodel",          # not a connected model
+                "my-model, frontier",   # asked again
+                "2", "local", "qwen3", "", "", "0", "0",
+                "y",
+                "6", "f2", "claude-opus-5", "ANTHROPIC_API_KEY", "15", "75",
+                "n",
+                "local", "f2", "",
+                "tests/support-triage", "3", "1", "y",
+            ]
+        )
+        run_setup(config_path(tmp_path), prompter=prompter)
+        assert any("nosuchmodel" in s for s in prompter.shown)
+
+
+class TestTestDirectories:
+    """A Test directory that does not exist is a typo, and setup is the moment
+    to say so -- not the run that was supposed to follow it."""
+
+    def test_a_missing_test_directory_is_refused(self, tmp_path):
+        _starter(tmp_path)
+        prompter = FakePrompter(
+            [
+                "",                        # keep the placeholders
+                "n",                       # connect nothing new
+                "my-model", "frontier", "",
+                "tests/nope",              # does not exist
+                "tests/support-triage",    # asked again
+                "3", "1", "y",
+            ]
+        )
+        run_setup(config_path(tmp_path), prompter=prompter)
+        assert any("tests/nope" in s for s in prompter.shown)
+        draft = draft_from_config(config_path(tmp_path))
+        assert list(draft.tests) == ["tests/support-triage"]
